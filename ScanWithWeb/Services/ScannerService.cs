@@ -54,7 +54,7 @@ public class ScannerService : IDisposable
         // (Assembly.Location is empty in single-file mode)
         var appId = TWIdentity.Create(
             DataGroups.Image,
-            new Version(2, 0, 2),
+            new Version(2, 0, 3),
             "ScanWithWeb Team",
             "ScanWithWeb",
             "ScanWithWeb Service",

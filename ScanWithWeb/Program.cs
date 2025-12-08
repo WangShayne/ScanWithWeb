@@ -56,10 +56,14 @@ internal static class Program
             var validityDays = configuration.GetValue("WebSocket:CertificateValidityDays", 365);
             var autoInstall = configuration.GetValue("WebSocket:AutoInstallCertificate", true);
 
-            // Use full path
-            var fullPath = Path.IsPathRooted(certPath!)
-                ? certPath
-                : Path.Combine(AppDomain.CurrentDomain.BaseDirectory, certPath!);
+            // Use AppData folder for certificate to ensure write permissions
+            // (Program Files is read-only for non-admin users)
+            var appDataPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "ScanWithWeb");
+            Directory.CreateDirectory(appDataPath);
+
+            var fullPath = Path.Combine(appDataPath, certPath!);
 
             return new CertificateManager(logger, fullPath!, certPassword!, "localhost", validityDays, autoInstall);
         });
@@ -107,10 +111,11 @@ internal static class Program
             var certPath = configuration.GetValue("WebSocket:CertificatePath", "scanwithweb.pfx");
             var certPassword = configuration.GetValue("WebSocket:CertificatePassword", "scanwithweb");
 
-            // Use full path
-            var fullPath = Path.IsPathRooted(certPath!)
-                ? certPath
-                : Path.Combine(AppDomain.CurrentDomain.BaseDirectory, certPath!);
+            // Use AppData folder for certificate (same as CertificateManager)
+            var appDataPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "ScanWithWeb");
+            var fullPath = Path.Combine(appDataPath, certPath!);
 
             return new WebSocketService(logger, sessionManager, scannerService, port, useSsl, fullPath, certPassword);
         });

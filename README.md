@@ -263,8 +263,8 @@ This project uses GitHub Actions for automated builds:
 
 To create a release:
 ```bash
-git tag v2.0.2
-git push origin v2.0.2
+git tag v2.0.3
+git push origin v2.0.3
 ```
 
 ## Requirements
