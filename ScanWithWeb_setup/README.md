@@ -6,8 +6,8 @@
 
 ### 方式一：创建 Tag 触发自动发布
 ```bash
-git tag v2.0.5
-git push origin v2.0.5
+git tag v2.0.6
+git push origin v2.0.6
 ```
 这将自动触发 GitHub Actions：
 1. 编译 64 位和 32 位应用程序
@@ -68,8 +68,8 @@ cd ..\ScanWithWeb_setup
 
 | 文件 | 说明 |
 |------|------|
-| `dist/installer/ScanWithWeb_Setup_x64_v2.0.5.exe` | 64位安装包 |
-| `dist/installer/ScanWithWeb_Setup_x86_v2.0.5.exe` | 32位安装包 |
+| `dist/installer/ScanWithWeb_Setup_x64_v2.0.6.exe` | 64位安装包 |
+| `dist/installer/ScanWithWeb_Setup_x86_v2.0.6.exe` | 32位安装包 |
 
 ## 安装包功能
 
@@ -98,5 +98,5 @@ dotnet publish -c Release -r win-x64 -p:PublishSingleFile=true
 
 发布前建议对安装包进行数字签名：
 ```batch
-signtool sign /f certificate.pfx /p password /t http://timestamp.digicert.com ScanWithWeb_Setup_x64_v2.0.5.exe
+signtool sign /f certificate.pfx /p password /t http://timestamp.digicert.com ScanWithWeb_Setup_x64_v2.0.6.exe
 ```

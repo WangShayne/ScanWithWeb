@@ -58,7 +58,7 @@ public class ScannerService : IDisposable
         // (Assembly.Location is empty in single-file mode)
         var appId = TWIdentity.Create(
             DataGroups.Image,
-            new Version(2, 0, 5),
+            new Version(2, 0, 6),
             "ScanWithWeb Team",
             "ScanWithWeb",
             "ScanWithWeb Service",
@@ -410,22 +410,31 @@ public class ScannerService : IDisposable
 
             ReturnCode result;
 
-            // Try to scan without UI if supported
-            var uiControllable = src.Capabilities.CapUIControllable.IsSupported;
-            _logger.LogDebug("UI Controllable supported: {UIControllable}", uiControllable);
+            // Always use ShowUI mode first - it's more stable across different scanners
+            // NoUI mode can cause access violations with some drivers
+            _logger.LogDebug("Enabling source with ShowUI mode (modal), WindowHandle: {Handle}", _windowHandle);
 
-            if (uiControllable)
+            try
             {
-                _logger.LogDebug("Enabling source with NoUI mode, WindowHandle: {Handle}", _windowHandle);
-                result = src.Enable(SourceEnableMode.NoUI, false, _windowHandle);
-            }
-            else
-            {
-                _logger.LogDebug("Enabling source with ShowUI mode, WindowHandle: {Handle}", _windowHandle);
                 result = src.Enable(SourceEnableMode.ShowUI, true, _windowHandle);
+                _logger.LogDebug("Source.Enable (ShowUI) returned: {Result}", result);
             }
+            catch (Exception enableEx)
+            {
+                _logger.LogError(enableEx, "ShowUI mode failed, trying ShowUIOnly mode");
 
-            _logger.LogDebug("Source.Enable returned: {Result}", result);
+                // Try ShowUIOnly as fallback
+                try
+                {
+                    result = src.Enable(SourceEnableMode.ShowUIOnly, true, _windowHandle);
+                    _logger.LogDebug("Source.Enable (ShowUIOnly) returned: {Result}", result);
+                }
+                catch (Exception fallbackEx)
+                {
+                    _logger.LogError(fallbackEx, "All enable modes failed");
+                    throw;
+                }
+            }
 
             if (result == ReturnCode.Success)
             {
