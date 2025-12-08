@@ -1,0 +1,39 @@
+# Visual Studio
+.vs/
+.vscode/
+*.user
+*.suo
+*.vsidx
+
+# Build outputs
+bin/
+obj/
+dist/
+*.dll
+*.exe
+*.pdb
+
+# NuGet
+*.nupkg
+packages/
+
+# Node.js
+node_modules/
+packages/scanwith-web-sdk/node_modules/
+packages/scanwith-web-sdk/dist/
+
+# Claude Code
+.claude/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+*.orig
+

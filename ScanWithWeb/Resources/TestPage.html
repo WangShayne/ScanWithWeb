@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ScanWithWeb - Test Page</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #f0f2f5;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        .card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+            padding: 30px;
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 20px;
+        }
+        .status-bar {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: #f8f9fa;
+            border-radius: 20px;
+            font-size: 14px;
+        }
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #ccc;
+        }
+        .status-dot.connected { background: #28a745; }
+        .status-dot.disconnected { background: #dc3545; }
+        .status-dot.warning { background: #ffc107; }
+
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        label {
+            font-size: 13px;
+            color: #666;
+            font-weight: 500;
+        }
+        select, input {
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+            background: white;
+        }
+        select:focus, input:focus {
+            outline: none;
+            border-color: #2980b9;
+            box-shadow: 0 0 0 3px rgba(41, 128, 185, 0.1);
+        }
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .btn-primary {
+            background: #2980b9;
+            color: white;
+        }
+        .btn-primary:hover:not(:disabled) {
+            background: #2471a3;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(41, 128, 185, 0.3);
+        }
+        .btn-secondary {
+            background: #f8f9fa;
+            color: #333;
+            border: 1px solid #ddd;
+        }
+        .btn-secondary:hover:not(:disabled) {
+            background: #e9ecef;
+        }
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+        .btn-danger:hover:not(:disabled) {
+            background: #c82333;
+        }
+
+        .gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .gallery-item {
+            position: relative;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            background: #f8f9fa;
+        }
+        .gallery-item img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+        .gallery-item .page-num {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+        }
+        .gallery-item .download-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: rgba(255,255,255,0.9);
+            color: #333;
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            text-decoration: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        .gallery-item:hover .download-btn {
+            opacity: 1;
+        }
+
+        .log-panel {
+            background: #1e1e1e;
+            border-radius: 8px;
+            padding: 15px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 12px;
+        }
+        .log-entry {
+            color: #ccc;
+            padding: 3px 0;
+            border-bottom: 1px solid #333;
+        }
+        .log-entry.info { color: #6cb6ff; }
+        .log-entry.success { color: #7ee787; }
+        .log-entry.error { color: #f85149; }
+        .log-entry.warn { color: #d29922; }
+        .log-time {
+            color: #666;
+            margin-right: 10px;
+        }
+
+        .progress-bar {
+            height: 4px;
+            background: #e9ecef;
+            border-radius: 2px;
+            margin-top: 10px;
+            overflow: hidden;
+            display: none;
+        }
+        .progress-bar.active {
+            display: block;
+        }
+        .progress-fill {
+            height: 100%;
+            background: #2980b9;
+            width: 0%;
+            transition: width 0.3s;
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+        .empty-state svg {
+            width: 60px;
+            height: 60px;
+            margin-bottom: 15px;
+            opacity: 0.5;
+        }
+
+        .protocol-select {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .protocol-select label {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            cursor: pointer;
+            padding: 8px 16px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        .protocol-select input[type="radio"] {
+            margin: 0;
+        }
+        .protocol-select label:has(input:checked) {
+            background: #e8f4fc;
+            border-color: #2980b9;
+            color: #2980b9;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>ScanWithWeb Test Page</h1>
+            <p class="subtitle">Test scanner connection and scanning functionality</p>
+
+            <div class="protocol-select">
+                <label>
+                    <input type="radio" name="protocol" value="ws" checked> WS (ws://localhost:8180)
+                </label>
+                <label>
+                    <input type="radio" name="protocol" value="wss"> WSS (wss://localhost:8181)
+                </label>
+            </div>
+
+            <div class="status-bar">
+                <div class="status-item">
+                    <span class="status-dot" id="wsStatus"></span>
+                    <span id="wsText">WS: Disconnected</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-dot" id="authStatus"></span>
+                    <span id="authText">Auth: Not authenticated</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-dot" id="scannerStatus"></span>
+                    <span id="scannerText">Scanner: None</span>
+                </div>
+            </div>
+
+            <div class="progress-bar" id="progressBar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="controls">
+                <div class="control-group">
+                    <label>Scanner</label>
+                    <select id="scannerSelect" disabled>
+                        <option value="">-- Select Scanner --</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label>DPI</label>
+                    <select id="dpiSelect">
+                        <option value="150">150 DPI</option>
+                        <option value="200" selected>200 DPI</option>
+                        <option value="300">300 DPI</option>
+                        <option value="600">600 DPI</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label>Color Mode</label>
+                    <select id="colorSelect">
+                        <option value="RGB" selected>Color (RGB)</option>
+                        <option value="Gray8">Grayscale</option>
+                        <option value="BlackWhite">Black & White</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label>Paper Size</label>
+                    <select id="paperSelect">
+                        <option value="A4" selected>A4</option>
+                        <option value="A3">A3</option>
+                        <option value="Letter">Letter</option>
+                        <option value="Legal">Legal</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="btn-group">
+                <button id="btnConnect" class="btn-primary">Connect</button>
+                <button id="btnScan" class="btn-primary" disabled>Scan</button>
+                <button id="btnStop" class="btn-danger" disabled>Stop</button>
+                <button id="btnClear" class="btn-secondary">Clear Images</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3 style="margin-bottom: 15px; color: #333;">Scanned Images</h3>
+            <div id="gallery" class="gallery">
+                <div class="empty-state">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <p>No scanned images yet</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3 style="margin-bottom: 15px; color: #333;">Connection Log</h3>
+            <div class="log-panel" id="logPanel"></div>
+        </div>
+    </div>
+
+    <script>
+        // Connection state
+        let ws = null;
+        let token = null;
+        let selectedScanner = null;
+        let scanning = false;
+        let images = [];
+        let currentPage = 0;
+
+        // DOM elements
+        const wsStatus = document.getElementById('wsStatus');
+        const wsText = document.getElementById('wsText');
+        const authStatus = document.getElementById('authStatus');
+        const authText = document.getElementById('authText');
+        const scannerStatus = document.getElementById('scannerStatus');
+        const scannerText = document.getElementById('scannerText');
+        const scannerSelect = document.getElementById('scannerSelect');
+        const btnConnect = document.getElementById('btnConnect');
+        const btnScan = document.getElementById('btnScan');
+        const btnStop = document.getElementById('btnStop');
+        const btnClear = document.getElementById('btnClear');
+        const gallery = document.getElementById('gallery');
+        const progressBar = document.getElementById('progressBar');
+        const progressFill = document.getElementById('progressFill');
+
+        // Get WebSocket URL based on selected protocol
+        function getWsUrl() {
+            const protocol = document.querySelector('input[name="protocol"]:checked').value;
+            return protocol === 'wss' ? 'wss://localhost:8181' : 'ws://localhost:8180';
+        }
+
+        // Log helper
+        function log(message, type = 'info') {
+            const panel = document.getElementById('logPanel');
+            const time = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.innerHTML = `<span class="log-time">${time}</span>${message}`;
+            panel.appendChild(entry);
+            panel.scrollTop = panel.scrollHeight;
+        }
+
+        // Update status indicators
+        function updateStatus(element, textElement, connected, text) {
+            element.className = `status-dot ${connected ? 'connected' : 'disconnected'}`;
+            textElement.textContent = text;
+        }
+
+        // Connect to WebSocket
+        function connect() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.close();
+                return;
+            }
+
+            const wsUrl = getWsUrl();
+            log(`Connecting to ${wsUrl}...`);
+            btnConnect.disabled = true;
+            btnConnect.textContent = 'Connecting...';
+
+            try {
+                ws = new WebSocket(wsUrl);
+
+                ws.onopen = () => {
+                    const protocol = document.querySelector('input[name="protocol"]:checked').value.toUpperCase();
+                    log('WebSocket connected', 'success');
+                    updateStatus(wsStatus, wsText, true, `WS: Connected (${protocol})`);
+                    btnConnect.textContent = 'Disconnect';
+                    btnConnect.disabled = false;
+
+                    // Authenticate
+                    authenticate();
+                };
+
+                ws.onclose = (e) => {
+                    log(`WebSocket disconnected: ${e.reason || 'Connection closed'}`, 'warn');
+                    updateStatus(wsStatus, wsText, false, 'WS: Disconnected');
+                    updateStatus(authStatus, authText, false, 'Auth: Not authenticated');
+                    updateStatus(scannerStatus, scannerText, false, 'Scanner: None');
+                    btnConnect.textContent = 'Connect';
+                    btnConnect.disabled = false;
+                    btnScan.disabled = true;
+                    scannerSelect.disabled = true;
+                    token = null;
+                    scanning = false;
+                };
+
+                ws.onerror = (e) => {
+                    log('WebSocket error - check if ScanWithWeb service is running', 'error');
+                    btnConnect.disabled = false;
+                    btnConnect.textContent = 'Connect';
+                };
+
+                ws.onmessage = (e) => {
+                    handleMessage(e.data);
+                };
+            } catch (err) {
+                log(`Connection error: ${err.message}`, 'error');
+                btnConnect.disabled = false;
+                btnConnect.textContent = 'Connect';
+            }
+        }
+
+        // Send message
+        function send(data) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(data));
+            }
+        }
+
+        // Authenticate
+        function authenticate() {
+            log('Authenticating...');
+            send({
+                action: 'authenticate',
+                clientId: 'test-page-' + Date.now()
+            });
+        }
+
+        // Get scanners
+        function getScanners() {
+            log('Getting scanner list...');
+            send({
+                action: 'list_scanners',
+                token: token
+            });
+        }
+
+        // Select scanner
+        function selectScanner(name) {
+            if (!name) return;
+            log(`Selecting scanner: ${name}`);
+            send({
+                action: 'select_scanner',
+                token: token,
+                settings: {
+                    source: name
+                }
+            });
+        }
+
+        // Start scan
+        function startScan() {
+            if (!selectedScanner || !token) return;
+
+            const settings = {
+                dpi: parseInt(document.getElementById('dpiSelect').value),
+                pixelType: document.getElementById('colorSelect').value,
+                paperSize: document.getElementById('paperSelect').value,
+                useAdf: true,
+                maxPages: -1
+            };
+
+            log(`Starting scan with DPI=${settings.dpi}, Color=${settings.pixelType}`);
+            scanning = true;
+            currentPage = 0;
+            btnScan.disabled = true;
+            btnStop.disabled = false;
+            progressBar.classList.add('active');
+
+            send({
+                action: 'scan',
+                token: token,
+                settings: settings
+            });
+        }
+
+        // Stop scan
+        function stopScan() {
+            log('Stopping scan...');
+            send({
+                action: 'stop_scan',
+                token: token
+            });
+        }
+
+        // Handle incoming messages
+        function handleMessage(data) {
+            try {
+                const msg = JSON.parse(data);
+                console.log('Received message:', msg);
+                log(`Received: action=${msg.action}, status=${msg.status}`, 'info');
+
+                switch (msg.action || msg.status) {
+                    case 'authenticate':
+                    case 'authenticated':
+                        if (msg.token) {
+                            token = msg.token;
+                            log(`Authenticated successfully, token: ${token.substring(0, 8)}...`, 'success');
+                            updateStatus(authStatus, authText, true, 'Auth: Authenticated');
+                            getScanners();
+                        }
+                        break;
+
+                    case 'list_scanners':
+                        log(`Scanners received: ${JSON.stringify(msg.scanners)}`, 'info');
+                        populateScanners(msg.scanners || []);
+                        break;
+
+                    case 'select_scanner':
+                        if (msg.status === 'success') {
+                            selectedScanner = scannerSelect.value;
+                            log(`Scanner selected: ${selectedScanner}`, 'success');
+                            updateStatus(scannerStatus, scannerText, true, `Scanner: ${selectedScanner}`);
+                            btnScan.disabled = false;
+                        }
+                        break;
+
+                    case 'image':
+                        handleImage(msg);
+                        break;
+
+                    case 'scan':
+                        // Scan action responses - check for image data first
+                        if (msg.data && msg.metadata) {
+                            handleImage(msg);
+                        } else if (msg.status === 'completed') {
+                            log(`Scan complete: ${msg.totalPages || currentPage} page(s)`, 'success');
+                            scanning = false;
+                            btnScan.disabled = false;
+                            btnStop.disabled = true;
+                            progressBar.classList.remove('active');
+                        } else if (msg.status === 'scanning') {
+                            // Scan in progress, do nothing
+                        }
+                        break;
+
+                    case 'stop_scan':
+                        // Stop scan response
+                        if (msg.status === 'cancelled') {
+                            log('Scan cancelled', 'warn');
+                            scanning = false;
+                            btnScan.disabled = false;
+                            btnStop.disabled = true;
+                            progressBar.classList.remove('active');
+                        }
+                        break;
+
+                    case 'scan_complete':
+                    case 'completed':
+                        log(`Scan complete: ${msg.totalPages || currentPage} page(s)`, 'success');
+                        scanning = false;
+                        btnScan.disabled = false;
+                        btnStop.disabled = true;
+                        progressBar.classList.remove('active');
+                        break;
+
+                    case 'scan_cancelled':
+                    case 'cancelled':
+                        log('Scan cancelled', 'warn');
+                        scanning = false;
+                        btnScan.disabled = false;
+                        btnStop.disabled = true;
+                        progressBar.classList.remove('active');
+                        break;
+
+                    case 'error':
+                        log(`Error: ${msg.message}`, 'error');
+                        if (scanning) {
+                            scanning = false;
+                            btnScan.disabled = false;
+                            btnStop.disabled = true;
+                            progressBar.classList.remove('active');
+                        }
+                        break;
+
+                    default:
+                        if (msg.data && msg.metadata) {
+                            // Image data
+                            handleImage(msg);
+                        } else {
+                            log(`Response: ${JSON.stringify(msg).substring(0, 100)}...`);
+                        }
+                }
+            } catch (err) {
+                log(`Parse error: ${err.message}`, 'error');
+            }
+        }
+
+        // Populate scanner dropdown
+        function populateScanners(scanners) {
+            scannerSelect.innerHTML = '<option value="">-- Select Scanner --</option>';
+
+            if (scanners.length === 0) {
+                log('No scanners found', 'warn');
+                updateStatus(scannerStatus, scannerText, false, 'Scanner: None found');
+                return;
+            }
+
+            scanners.forEach(s => {
+                const opt = document.createElement('option');
+                opt.value = s.name || s;
+                opt.textContent = s.name || s;
+                scannerSelect.appendChild(opt);
+            });
+
+            scannerSelect.disabled = false;
+            log(`Found ${scanners.length} scanner(s)`, 'success');
+        }
+
+        // Handle scanned image
+        function handleImage(msg) {
+            currentPage = msg.pageNumber || (currentPage + 1);
+            log(`Received page ${currentPage}`, 'success');
+
+            // Convert base64 to blob
+            const byteChars = atob(msg.data);
+            const byteNums = new Array(byteChars.length);
+            for (let i = 0; i < byteChars.length; i++) {
+                byteNums[i] = byteChars.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNums);
+            const blob = new Blob([byteArray], { type: 'image/png' });
+            const url = URL.createObjectURL(blob);
+
+            images.push({ url, pageNumber: currentPage, blob });
+
+            // Update gallery
+            updateGallery();
+        }
+
+        // Update gallery display
+        function updateGallery() {
+            if (images.length === 0) {
+                gallery.innerHTML = `
+                    <div class="empty-state">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                        <p>No scanned images yet</p>
+                    </div>
+                `;
+                return;
+            }
+
+            gallery.innerHTML = images.map((img, i) => `
+                <div class="gallery-item">
+                    <img src="${img.url}" alt="Page ${img.pageNumber}">
+                    <span class="page-num">Page ${img.pageNumber}</span>
+                    <a href="${img.url}" download="scan_page_${img.pageNumber}.png" class="download-btn">Download</a>
+                </div>
+            `).join('');
+        }
+
+        // Clear images
+        function clearImages() {
+            images.forEach(img => URL.revokeObjectURL(img.url));
+            images = [];
+            currentPage = 0;
+            updateGallery();
+            log('Images cleared');
+        }
+
+        // Event listeners
+        btnConnect.addEventListener('click', connect);
+        btnScan.addEventListener('click', startScan);
+        btnStop.addEventListener('click', stopScan);
+        btnClear.addEventListener('click', clearImages);
+        scannerSelect.addEventListener('change', (e) => selectScanner(e.target.value));
+
+        // Auto-connect on page load
+        log('Test page loaded. Auto-connecting to WS service...');
+        setTimeout(() => connect(), 500);
+    </script>
+</body>
+</html>

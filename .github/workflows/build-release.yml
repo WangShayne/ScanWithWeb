@@ -1,0 +1,204 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # Only trigger on version tags like v2.0.0
+  workflow_dispatch:  # Allow manual trigger
+    inputs:
+      version:
+        description: 'Version number (e.g., 2.0.0)'
+        required: true
+        default: '2.0.2'
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  PROJECT_PATH: 'ScanWithWeb/ScanWithWeb.csproj'
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Get version from tag or input
+      id: version
+      shell: pwsh
+      run: |
+        if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+          $version = "${{ github.event.inputs.version }}"
+        } else {
+          $version = "${{ github.ref_name }}".TrimStart('v')
+        }
+        echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+        echo "Version: $version"
+
+    - name: Restore dependencies
+      run: dotnet restore ${{ env.PROJECT_PATH }}
+
+    - name: Build and Publish x64
+      run: |
+        dotnet publish ${{ env.PROJECT_PATH }} `
+          -c Release `
+          -r win-x64 `
+          -o dist/win-x64 `
+          --self-contained true `
+          -p:PublishSingleFile=true `
+          -p:Version=${{ steps.version.outputs.VERSION }}
+
+    - name: Build and Publish x86
+      run: |
+        dotnet publish ${{ env.PROJECT_PATH }} `
+          -c Release `
+          -r win-x86 `
+          -o dist/win-x86 `
+          --self-contained true `
+          -p:PublishSingleFile=true `
+          -p:Version=${{ steps.version.outputs.VERSION }}
+
+    - name: Install Inno Setup
+      shell: pwsh
+      run: |
+        choco install innosetup -y
+        echo "C:\Program Files (x86)\Inno Setup 6" >> $env:GITHUB_PATH
+
+    - name: Update version in Inno Setup scripts
+      shell: pwsh
+      run: |
+        $version = "${{ steps.version.outputs.VERSION }}"
+
+        # Update x64 script
+        $content = Get-Content "ScanWithWeb_setup/ScanWithWeb_x64.iss" -Raw
+        $content = $content -replace '#define MyAppVersion ".*"', "#define MyAppVersion `"$version`""
+        Set-Content "ScanWithWeb_setup/ScanWithWeb_x64.iss" $content
+
+        # Update x86 script
+        $content = Get-Content "ScanWithWeb_setup/ScanWithWeb_x86.iss" -Raw
+        $content = $content -replace '#define MyAppVersion ".*"', "#define MyAppVersion `"$version`""
+        Set-Content "ScanWithWeb_setup/ScanWithWeb_x86.iss" $content
+
+    - name: Create installer directory
+      run: mkdir -p dist/installer
+
+    - name: Build x64 Installer
+      shell: cmd
+      run: |
+        "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" ScanWithWeb_setup\ScanWithWeb_x64.iss
+
+    - name: Build x86 Installer
+      shell: cmd
+      run: |
+        "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" ScanWithWeb_setup\ScanWithWeb_x86.iss
+
+    - name: List output files
+      shell: pwsh
+      run: |
+        echo "=== Built installers ==="
+        Get-ChildItem dist/installer -Recurse | Format-Table Name, Length
+
+    - name: Upload x64 Installer Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ScanWithWeb_Setup_x64
+        path: dist/installer/ScanWithWeb_Setup_x64_*.exe
+
+    - name: Upload x86 Installer Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ScanWithWeb_Setup_x86
+        path: dist/installer/ScanWithWeb_Setup_x86_*.exe
+
+    - name: Upload x64 Portable
+      uses: actions/upload-artifact@v4
+      with:
+        name: ScanWithWeb_Portable_x64
+        path: dist/win-x64/
+
+    - name: Upload x86 Portable
+      uses: actions/upload-artifact@v4
+      with:
+        name: ScanWithWeb_Portable_x86
+        path: dist/win-x86/
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+
+    permissions:
+      contents: write
+
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
+    - name: Get version
+      id: version
+      run: |
+        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+          echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+        else
+          echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Create portable ZIP files
+      run: |
+        cd artifacts
+        zip -r ScanWithWeb_Portable_x64_v${{ steps.version.outputs.VERSION }}.zip ScanWithWeb_Portable_x64/
+        zip -r ScanWithWeb_Portable_x86_v${{ steps.version.outputs.VERSION }}.zip ScanWithWeb_Portable_x86/
+
+    - name: List artifacts
+      run: |
+        echo "=== All artifacts ==="
+        find artifacts -type f -name "*.exe" -o -name "*.zip" | head -20
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', github.event.inputs.version) || github.ref_name }}
+        name: ScanWithWeb v${{ steps.version.outputs.VERSION }}
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+        files: |
+          artifacts/ScanWithWeb_Setup_x64/*.exe
+          artifacts/ScanWithWeb_Setup_x86/*.exe
+          artifacts/*.zip
+        body: |
+          ## ScanWithWeb Service v${{ steps.version.outputs.VERSION }}
+
+          ### Downloads
+
+          | File | Description |
+          |------|-------------|
+          | `ScanWithWeb_Setup_x64_v${{ steps.version.outputs.VERSION }}.exe` | 64-bit Installer (Recommended) |
+          | `ScanWithWeb_Setup_x86_v${{ steps.version.outputs.VERSION }}.exe` | 32-bit Installer |
+          | `ScanWithWeb_Portable_x64_v${{ steps.version.outputs.VERSION }}.zip` | 64-bit Portable Version |
+          | `ScanWithWeb_Portable_x86_v${{ steps.version.outputs.VERSION }}.zip` | 32-bit Portable Version |
+
+          ### System Requirements
+          - Windows 10/11 (64-bit or 32-bit)
+          - .NET 8.0 Runtime (included in installer)
+
+          ### Features
+          - WebSocket server for scanner communication (WS/WSS)
+          - TWAIN scanner support
+          - System tray integration
+          - Auto-reconnect capability
+
+          ### Installation
+          1. Download the appropriate installer for your system
+          2. Run the installer
+          3. Follow the installation wizard
+          4. The service will start automatically after installation
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
