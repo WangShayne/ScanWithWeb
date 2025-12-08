@@ -58,7 +58,7 @@ public class ScannerService : IDisposable
         // (Assembly.Location is empty in single-file mode)
         var appId = TWIdentity.Create(
             DataGroups.Image,
-            new Version(2, 0, 6),
+            new Version(2, 0, 7),
             "ScanWithWeb Team",
             "ScanWithWeb",
             "ScanWithWeb Service",
@@ -410,24 +410,62 @@ public class ScannerService : IDisposable
 
             ReturnCode result;
 
-            // Always use ShowUI mode first - it's more stable across different scanners
-            // NoUI mode can cause access violations with some drivers
-            _logger.LogDebug("Enabling source with ShowUI mode (modal), WindowHandle: {Handle}", _windowHandle);
+            // Check if scanner supports UI-less operation
+            bool supportsNoUI = false;
+            try
+            {
+                if (src.Capabilities.CapUIControllable.IsSupported)
+                {
+                    var canDisableUI = src.Capabilities.CapUIControllable.GetCurrent();
+                    supportsNoUI = canDisableUI == BoolType.True;
+                    _logger.LogDebug("Scanner UI controllable: {Controllable}", supportsNoUI);
+                }
+            }
+            catch (Exception capEx)
+            {
+                _logger.LogDebug("Could not check CapUIControllable: {Message}", capEx.Message);
+            }
+
+            // Try NoUI mode first if supported (for programmatic control)
+            if (supportsNoUI)
+            {
+                _logger.LogDebug("Trying NoUI mode first (scanner supports UI control)");
+                try
+                {
+                    result = src.Enable(SourceEnableMode.NoUI, false, _windowHandle);
+                    _logger.LogDebug("Source.Enable (NoUI) returned: {Result}", result);
+
+                    if (result == ReturnCode.Success)
+                    {
+                        _logger.LogInformation("NoUI mode scan started successfully for session {ClientId}", session.ClientId);
+                        return Task.FromResult(true);
+                    }
+                }
+                catch (Exception noUIEx)
+                {
+                    _logger.LogWarning(noUIEx, "NoUI mode failed, falling back to ShowUI mode");
+                }
+            }
+
+            // Use ShowUI mode with modal=false so window appears and user can interact
+            // modal=false allows the scanner UI to appear without blocking the message loop
+            _logger.LogDebug("Enabling source with ShowUI mode (non-modal), WindowHandle: {Handle}", _windowHandle);
+            _logger.LogInformation("Scanner UI will appear - please click 'Scan' in the scanner dialog to start scanning");
 
             try
             {
-                result = src.Enable(SourceEnableMode.ShowUI, true, _windowHandle);
-                _logger.LogDebug("Source.Enable (ShowUI) returned: {Result}", result);
+                result = src.Enable(SourceEnableMode.ShowUI, false, _windowHandle);
+                _logger.LogDebug("Source.Enable (ShowUI, non-modal) returned: {Result}", result);
             }
             catch (Exception enableEx)
             {
-                _logger.LogError(enableEx, "ShowUI mode failed, trying ShowUIOnly mode");
+                _logger.LogError(enableEx, "ShowUI non-modal mode failed, trying modal mode");
 
-                // Try ShowUIOnly as fallback
+                // Try modal mode as fallback
                 try
                 {
-                    result = src.Enable(SourceEnableMode.ShowUIOnly, true, _windowHandle);
-                    _logger.LogDebug("Source.Enable (ShowUIOnly) returned: {Result}", result);
+                    result = src.Enable(SourceEnableMode.ShowUI, true, _windowHandle);
+                    _logger.LogDebug("Source.Enable (ShowUI, modal) returned: {Result}", result);
                 }
                 catch (Exception fallbackEx)
                 {
