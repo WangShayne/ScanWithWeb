@@ -14,6 +14,7 @@ public class ScannerService : IDisposable
 {
     private readonly ILogger<ScannerService> _logger;
     private TwainSession? _twain;
+    private IntPtr _windowHandle;
     private bool _stopScan;
     private int _currentPageNumber;
     private ImageCodecInfo? _tiffCodecInfo;
@@ -50,11 +51,13 @@ public class ScannerService : IDisposable
     /// </summary>
     public void Initialize(IntPtr windowHandle)
     {
+        _windowHandle = windowHandle;
+
         // Create TWIdentity manually to avoid issues with single-file publish
         // (Assembly.Location is empty in single-file mode)
         var appId = TWIdentity.Create(
             DataGroups.Image,
-            new Version(2, 0, 3),
+            new Version(2, 0, 4),
             "ScanWithWeb Team",
             "ScanWithWeb",
             "ScanWithWeb Service",
@@ -390,11 +393,11 @@ public class ScannerService : IDisposable
             // Try to scan without UI if supported
             if (src.Capabilities.CapUIControllable.IsSupported)
             {
-                result = src.Enable(SourceEnableMode.NoUI, false, IntPtr.Zero);
+                result = src.Enable(SourceEnableMode.NoUI, false, _windowHandle);
             }
             else
             {
-                result = src.Enable(SourceEnableMode.ShowUI, true, IntPtr.Zero);
+                result = src.Enable(SourceEnableMode.ShowUI, true, _windowHandle);
             }
 
             if (result == ReturnCode.Success)

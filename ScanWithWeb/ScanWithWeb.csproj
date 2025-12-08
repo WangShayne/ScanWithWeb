@@ -10,7 +10,7 @@
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <AssemblyName>ScanWithWeb</AssemblyName>
     <RootNamespace>ScanWithWeb</RootNamespace>
-    <Version>2.0.3</Version>
+    <Version>2.0.4</Version>
     <Authors>ScanWithWeb Team</Authors>
     <Description>Web-enabled scanner service with secure WebSocket support</Description>
     <PublishSingleFile>true</PublishSingleFile>
