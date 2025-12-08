@@ -51,19 +51,23 @@ public class ScannerService : IDisposable
     /// </summary>
     public void Initialize(IntPtr windowHandle)
     {
+        _logger.LogInformation("Initializing TWAIN session with WindowHandle: {Handle}", windowHandle);
         _windowHandle = windowHandle;
 
         // Create TWIdentity manually to avoid issues with single-file publish
         // (Assembly.Location is empty in single-file mode)
         var appId = TWIdentity.Create(
             DataGroups.Image,
-            new Version(2, 0, 4),
+            new Version(2, 0, 5),
             "ScanWithWeb Team",
             "ScanWithWeb",
             "ScanWithWeb Service",
             "ScanWithWeb Scanner Service");
 
+        _logger.LogDebug("TWIdentity created: {AppId}", appId.ProductName);
+
         _twain = new TwainSession(appId);
+        _logger.LogDebug("TwainSession created, initial state: {State}", _twain.State);
 
         _twain.StateChanged += (s, e) =>
         {
@@ -72,7 +76,7 @@ public class ScannerService : IDisposable
 
         _twain.TransferError += (s, e) =>
         {
-            _logger.LogError("TWAIN transfer error");
+            _logger.LogError("TWAIN transfer error occurred");
             ScanError?.Invoke(this, new ScanErrorEventArgs(
                 _currentScanSession,
                 _currentRequestId ?? string.Empty,
@@ -89,21 +93,30 @@ public class ScannerService : IDisposable
 
         _twain.TransferReady += (s, e) =>
         {
+            _logger.LogDebug("TransferReady event, CancelAll: {Cancel}", _stopScan);
             e.CancelAll = _stopScan;
         };
 
         _twain.SynchronizationContext = SynchronizationContext.Current;
+        _logger.LogDebug("SynchronizationContext set: {HasContext}", SynchronizationContext.Current != null);
 
         if (_twain.State < 3)
         {
+            _logger.LogDebug("Opening TWAIN session...");
             _twain.Open();
-            _logger.LogInformation("TWAIN session opened");
+            _logger.LogInformation("TWAIN session opened successfully, state: {State}", _twain.State);
+        }
+        else
+        {
+            _logger.LogDebug("TWAIN session already open, state: {State}", _twain.State);
         }
     }
 
     private void OnDataTransferred(object? sender, DataTransferredEventArgs e)
     {
-        _logger.LogInformation("Image data received");
+        _logger.LogInformation("Image data received - Page {Page}", _currentPageNumber + 1);
+        _logger.LogDebug("DataTransferred - NativeData: {HasNative}, FileDataPath: {FilePath}",
+            e.NativeData != IntPtr.Zero, e.FileDataPath ?? "null");
         _currentPageNumber++;
 
         try
@@ -367,9 +380,13 @@ public class ScannerService : IDisposable
     /// </summary>
     public Task<bool> StartScanAsync(ClientSession session, string requestId)
     {
+        _logger.LogDebug("StartScanAsync called - RequestId: {RequestId}, ClientId: {ClientId}",
+            requestId, session?.ClientId ?? "null");
+
         if (_twain?.CurrentSource == null)
         {
-            _logger.LogWarning("No scanner selected");
+            _logger.LogWarning("No scanner selected - TWAIN: {TwainNull}, CurrentSource: {SourceNull}",
+                _twain == null, _twain?.CurrentSource == null);
             return Task.FromResult(false);
         }
 
@@ -388,21 +405,31 @@ public class ScannerService : IDisposable
         try
         {
             var src = _twain.CurrentSource;
+            _logger.LogDebug("Current scanner: {ScannerName}, TWAIN State: {State}, WindowHandle: {Handle}",
+                src.Name, _twain.State, _windowHandle);
+
             ReturnCode result;
 
             // Try to scan without UI if supported
-            if (src.Capabilities.CapUIControllable.IsSupported)
+            var uiControllable = src.Capabilities.CapUIControllable.IsSupported;
+            _logger.LogDebug("UI Controllable supported: {UIControllable}", uiControllable);
+
+            if (uiControllable)
             {
+                _logger.LogDebug("Enabling source with NoUI mode, WindowHandle: {Handle}", _windowHandle);
                 result = src.Enable(SourceEnableMode.NoUI, false, _windowHandle);
             }
             else
             {
+                _logger.LogDebug("Enabling source with ShowUI mode, WindowHandle: {Handle}", _windowHandle);
                 result = src.Enable(SourceEnableMode.ShowUI, true, _windowHandle);
             }
 
+            _logger.LogDebug("Source.Enable returned: {Result}", result);
+
             if (result == ReturnCode.Success)
             {
-                _logger.LogInformation("Scan started for session {ClientId}", session.ClientId);
+                _logger.LogInformation("Scan started successfully for session {ClientId}", session.ClientId);
                 return Task.FromResult(true);
             }
             else
@@ -414,7 +441,8 @@ public class ScannerService : IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error starting scan");
+            _logger.LogError(ex, "Error starting scan - Exception type: {ExType}, Message: {Message}",
+                ex.GetType().FullName, ex.Message);
             IsScanning = false;
             return Task.FromResult(false);
         }

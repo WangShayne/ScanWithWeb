@@ -263,8 +263,8 @@ npm run build
 
 创建发布版本：
 ```bash
-git tag v2.0.4
-git push origin v2.0.4
+git tag v2.0.5
+git push origin v2.0.5
 ```
 
 ## 系统要求
