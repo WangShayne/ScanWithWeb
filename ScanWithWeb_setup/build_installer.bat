@@ -20,6 +20,21 @@ if not exist %ISCC% (
 :: Create output directory
 if not exist "..\dist\installer" mkdir "..\dist\installer"
 
+:: Check for TWAIN DSM dependencies
+if not exist "dependencies\twaindsm_x64.dll" (
+    echo WARNING: TWAIN DSM DLLs not found in dependencies folder!
+    echo.
+    echo Please download from: https://github.com/twain/twain-dsm/releases
+    echo And place the following files in the 'dependencies' folder:
+    echo   - twaindsm_x64.dll (64-bit version)
+    echo   - twaindsm_x86.dll (32-bit version)
+    echo.
+    echo Or run download_twain_dsm.ps1 to download automatically.
+    echo.
+    choice /C YN /M "Continue without TWAIN DSM"
+    if errorlevel 2 exit /b 1
+)
+
 echo [1/4] Building 64-bit application...
 echo ----------------------------------------
 cd ..\ScanWithWeb
@@ -68,8 +83,8 @@ echo Build completed successfully!
 echo ========================================
 echo.
 echo Output files:
-echo   64-bit: ..\dist\installer\ScanWithWeb_Setup_x64_v2.0.6.exe
-echo   32-bit: ..\dist\installer\ScanWithWeb_Setup_x86_v2.0.6.exe
+echo   64-bit: ..\dist\installer\ScanWithWeb_Setup_x64_v2.0.8.exe
+echo   32-bit: ..\dist\installer\ScanWithWeb_Setup_x86_v2.0.8.exe
 echo.
 
 pause

@@ -3,7 +3,7 @@
 ; Download Inno Setup from: https://jrsoftware.org/isinfo.php
 
 #define MyAppName "ScanWithWeb Service"
-#define MyAppVersion "2.0.7"
+#define MyAppVersion "2.0.8"
 #define MyAppPublisher "ScanWithWeb Team"
 #define MyAppURL "https://github.com/user/scanwithweb"
 #define MyAppExeName "ScanWithWeb.exe"
@@ -57,6 +57,13 @@ Name: "startupicon"; Description: "Start with Windows"; GroupDescription: "Start
 [Files]
 ; Main application files
 Source: "..\dist\win-x86\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+; TWAIN Data Source Manager (required for scanner functionality)
+; For 32-bit apps: Install to SysWOW64 on 64-bit Windows, System32 on 32-bit Windows
+; onlyifdoesntexist - don't overwrite existing TWAIN DSM
+; uninsneveruninstall - don't remove on uninstall as other apps may need it
+Source: "dependencies\twaindsm_x86.dll"; DestDir: "{syswow64}"; DestName: "twaindsm.dll"; Flags: ignoreversion onlyifdoesntexist uninsneveruninstall; Check: IsWin64
+Source: "dependencies\twaindsm_x86.dll"; DestDir: "{sys}"; DestName: "twaindsm.dll"; Flags: ignoreversion onlyifdoesntexist uninsneveruninstall; Check: not IsWin64
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

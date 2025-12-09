@@ -30,6 +30,8 @@ public class ScannerService : IDisposable
 
     public string? CurrentScannerName { get; private set; }
     public bool IsScanning { get; private set; }
+    public bool IsTwainAvailable { get; private set; }
+    public string? TwainError { get; private set; }
 
     public ScannerService(ILogger<ScannerService> logger)
     {
@@ -49,66 +51,87 @@ public class ScannerService : IDisposable
     /// <summary>
     /// Initializes the TWAIN session
     /// </summary>
-    public void Initialize(IntPtr windowHandle)
+    /// <returns>True if initialization succeeded, false if TWAIN is not available</returns>
+    public bool Initialize(IntPtr windowHandle)
     {
         _logger.LogInformation("Initializing TWAIN session with WindowHandle: {Handle}", windowHandle);
         _windowHandle = windowHandle;
 
-        // Create TWIdentity manually to avoid issues with single-file publish
-        // (Assembly.Location is empty in single-file mode)
-        var appId = TWIdentity.Create(
-            DataGroups.Image,
-            new Version(2, 0, 7),
-            "ScanWithWeb Team",
-            "ScanWithWeb",
-            "ScanWithWeb Service",
-            "ScanWithWeb Scanner Service");
-
-        _logger.LogDebug("TWIdentity created: {AppId}", appId.ProductName);
-
-        _twain = new TwainSession(appId);
-        _logger.LogDebug("TwainSession created, initial state: {State}", _twain.State);
-
-        _twain.StateChanged += (s, e) =>
+        try
         {
-            _logger.LogDebug("TWAIN state changed to {State}", _twain.State);
-        };
+            // Create TWIdentity manually to avoid issues with single-file publish
+            // (Assembly.Location is empty in single-file mode)
+            var appId = TWIdentity.Create(
+                DataGroups.Image,
+                new Version(2, 0, 8),
+                "ScanWithWeb Team",
+                "ScanWithWeb",
+                "ScanWithWeb Service",
+                "ScanWithWeb Scanner Service");
 
-        _twain.TransferError += (s, e) =>
-        {
-            _logger.LogError("TWAIN transfer error occurred");
-            ScanError?.Invoke(this, new ScanErrorEventArgs(
-                _currentScanSession,
-                _currentRequestId ?? string.Empty,
-                "Transfer error occurred"));
-        };
+            _logger.LogDebug("TWIdentity created: {AppId}", appId.ProductName);
 
-        _twain.DataTransferred += OnDataTransferred;
+            _twain = new TwainSession(appId);
+            _logger.LogDebug("TwainSession created, initial state: {State}", _twain.State);
 
-        _twain.SourceDisabled += (s, e) =>
-        {
-            _logger.LogInformation("Scan source disabled, scan complete");
-            CompleteScan();
-        };
+            _twain.StateChanged += (s, e) =>
+            {
+                _logger.LogDebug("TWAIN state changed to {State}", _twain.State);
+            };
 
-        _twain.TransferReady += (s, e) =>
-        {
-            _logger.LogDebug("TransferReady event, CancelAll: {Cancel}", _stopScan);
-            e.CancelAll = _stopScan;
-        };
+            _twain.TransferError += (s, e) =>
+            {
+                _logger.LogError("TWAIN transfer error occurred");
+                ScanError?.Invoke(this, new ScanErrorEventArgs(
+                    _currentScanSession,
+                    _currentRequestId ?? string.Empty,
+                    "Transfer error occurred"));
+            };
 
-        _twain.SynchronizationContext = SynchronizationContext.Current;
-        _logger.LogDebug("SynchronizationContext set: {HasContext}", SynchronizationContext.Current != null);
+            _twain.DataTransferred += OnDataTransferred;
 
-        if (_twain.State < 3)
-        {
-            _logger.LogDebug("Opening TWAIN session...");
-            _twain.Open();
-            _logger.LogInformation("TWAIN session opened successfully, state: {State}", _twain.State);
+            _twain.SourceDisabled += (s, e) =>
+            {
+                _logger.LogInformation("Scan source disabled, scan complete");
+                CompleteScan();
+            };
+
+            _twain.TransferReady += (s, e) =>
+            {
+                _logger.LogDebug("TransferReady event, CancelAll: {Cancel}", _stopScan);
+                e.CancelAll = _stopScan;
+            };
+
+            _twain.SynchronizationContext = SynchronizationContext.Current;
+            _logger.LogDebug("SynchronizationContext set: {HasContext}", SynchronizationContext.Current != null);
+
+            if (_twain.State < 3)
+            {
+                _logger.LogDebug("Opening TWAIN session...");
+                _twain.Open();
+                _logger.LogInformation("TWAIN session opened successfully, state: {State}", _twain.State);
+            }
+            else
+            {
+                _logger.LogDebug("TWAIN session already open, state: {State}", _twain.State);
+            }
+
+            IsTwainAvailable = true;
+            return true;
         }
-        else
+        catch (DllNotFoundException ex)
         {
-            _logger.LogDebug("TWAIN session already open, state: {State}", _twain.State);
+            _logger.LogError(ex, "TWAIN DLL not found - TWAIN Data Source Manager may not be installed");
+            IsTwainAvailable = false;
+            TwainError = "TWAIN not installed. Please install a TWAIN-compatible scanner driver or the TWAIN Data Source Manager.";
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to initialize TWAIN session");
+            IsTwainAvailable = false;
+            TwainError = $"TWAIN initialization failed: {ex.Message}";
+            return false;
         }
     }
 

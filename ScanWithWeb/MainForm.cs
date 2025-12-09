@@ -426,7 +426,13 @@ public partial class MainForm : Form
         base.OnHandleCreated(e);
 
         // Initialize TWAIN
-        _scannerService.Initialize(this.Handle);
+        var twainInitialized = _scannerService.Initialize(this.Handle);
+
+        if (!twainInitialized)
+        {
+            _logger.LogWarning("TWAIN initialization failed: {Error}", _scannerService.TwainError);
+            UpdateScannerStatus(false, _scannerService.TwainError ?? "TWAIN not available");
+        }
 
         // Start WebSocket service (both WS and WSS)
         _webSocketService.Start();
@@ -434,7 +440,7 @@ public partial class MainForm : Form
         // Update status display
         UpdateServiceStatus();
 
-        UpdateStatus("Service running - waiting for connections");
+        UpdateStatus(twainInitialized ? "Service running - waiting for connections" : "Service running - Scanner not available");
     }
 
     private void UpdateServiceStatus()
@@ -476,19 +482,38 @@ public partial class MainForm : Form
         // Scanner Status
         if (_scannerStatusIcon != null && _scannerStatusLabel != null)
         {
-            var scanners = _scannerService.GetAvailableScanners();
-            if (scanners.Count > 0)
+            if (!_scannerService.IsTwainAvailable)
             {
-                _scannerStatusIcon.ForeColor = _successColor;
-                _scannerStatusLabel.Text = $"{scanners.Count} scanner(s) available";
-                _scannerStatusLabel.ForeColor = _successColor;
+                _scannerStatusIcon.ForeColor = _errorColor;
+                _scannerStatusLabel.Text = _scannerService.TwainError ?? "TWAIN not available";
+                _scannerStatusLabel.ForeColor = _errorColor;
             }
             else
             {
-                _scannerStatusIcon.ForeColor = _warningColor;
-                _scannerStatusLabel.Text = "No scanners detected";
-                _scannerStatusLabel.ForeColor = _warningColor;
+                var scanners = _scannerService.GetAvailableScanners();
+                if (scanners.Count > 0)
+                {
+                    _scannerStatusIcon.ForeColor = _successColor;
+                    _scannerStatusLabel.Text = $"{scanners.Count} scanner(s) available";
+                    _scannerStatusLabel.ForeColor = _successColor;
+                }
+                else
+                {
+                    _scannerStatusIcon.ForeColor = _warningColor;
+                    _scannerStatusLabel.Text = "No scanners detected";
+                    _scannerStatusLabel.ForeColor = _warningColor;
+                }
             }
+        }
+    }
+
+    private void UpdateScannerStatus(bool available, string message)
+    {
+        if (_scannerStatusIcon != null && _scannerStatusLabel != null)
+        {
+            _scannerStatusIcon.ForeColor = available ? _successColor : _errorColor;
+            _scannerStatusLabel.Text = message;
+            _scannerStatusLabel.ForeColor = available ? _successColor : _errorColor;
         }
     }
 

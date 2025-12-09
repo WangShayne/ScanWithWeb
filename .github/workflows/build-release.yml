@@ -9,7 +9,7 @@ on:
       version:
         description: 'Version number (e.g., 2.0.0)'
         required: true
-        default: '2.0.7'
+        default: '2.0.8'
 
 env:
   DOTNET_VERSION: '8.0.x'
@@ -86,6 +86,48 @@ jobs:
 
     - name: Create installer directory
       run: mkdir -p dist/installer
+
+    - name: Download TWAIN DSM
+      shell: pwsh
+      run: |
+        # Create dependencies directory
+        New-Item -ItemType Directory -Force -Path "ScanWithWeb_setup/dependencies"
+
+        # Download TWAIN DSM from official GitHub releases
+        $twainDsmVersion = "2.5.1"
+        $downloadUrl = "https://github.com/twain/twain-dsm/releases/download/v$twainDsmVersion/TWAINDSM_$twainDsmVersion.zip"
+
+        Write-Host "Downloading TWAIN DSM from: $downloadUrl"
+        Invoke-WebRequest -Uri $downloadUrl -OutFile "twaindsm.zip"
+
+        # Extract the ZIP
+        Expand-Archive -Path "twaindsm.zip" -DestinationPath "twaindsm_extracted" -Force
+
+        # Find and copy the DLLs
+        # 64-bit DLL is in Win64 folder
+        $dll64 = Get-ChildItem -Path "twaindsm_extracted" -Recurse -Filter "TWAINDSM.dll" | Where-Object { $_.DirectoryName -match "Win64|x64|64" } | Select-Object -First 1
+        if ($dll64) {
+            Copy-Item $dll64.FullName "ScanWithWeb_setup/dependencies/twaindsm_x64.dll"
+            Write-Host "Copied 64-bit TWAIN DSM: $($dll64.FullName)"
+        } else {
+            # Fallback: use the main DLL (usually 64-bit on 64-bit systems)
+            $dllAny = Get-ChildItem -Path "twaindsm_extracted" -Recurse -Filter "TWAINDSM.dll" | Select-Object -First 1
+            if ($dllAny) {
+                Copy-Item $dllAny.FullName "ScanWithWeb_setup/dependencies/twaindsm_x64.dll"
+                Write-Host "Copied TWAIN DSM (fallback): $($dllAny.FullName)"
+            }
+        }
+
+        # 32-bit DLL is in Win32 folder
+        $dll32 = Get-ChildItem -Path "twaindsm_extracted" -Recurse -Filter "TWAINDSM.dll" | Where-Object { $_.DirectoryName -match "Win32|x86|32" } | Select-Object -First 1
+        if ($dll32) {
+            Copy-Item $dll32.FullName "ScanWithWeb_setup/dependencies/twaindsm_x86.dll"
+            Write-Host "Copied 32-bit TWAIN DSM: $($dll32.FullName)"
+        }
+
+        # Verify files exist
+        Write-Host "=== Dependencies directory contents ==="
+        Get-ChildItem "ScanWithWeb_setup/dependencies" | Format-Table Name, Length
 
     - name: Build x64 Installer
       shell: cmd
