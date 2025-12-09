@@ -94,8 +94,9 @@ jobs:
         New-Item -ItemType Directory -Force -Path "ScanWithWeb_setup/dependencies"
 
         # Download TWAIN DSM from official GitHub releases
+        # Note: File naming changed - use twain-dsm-X.X.X.zip format
         $twainDsmVersion = "2.5.1"
-        $downloadUrl = "https://github.com/twain/twain-dsm/releases/download/v$twainDsmVersion/TWAINDSM_$twainDsmVersion.zip"
+        $downloadUrl = "https://github.com/twain/twain-dsm/releases/download/v$twainDsmVersion/twain-dsm-$twainDsmVersion.zip"
 
         Write-Host "Downloading TWAIN DSM from: $downloadUrl"
         Invoke-WebRequest -Uri $downloadUrl -OutFile "twaindsm.zip"

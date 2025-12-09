@@ -15,8 +15,9 @@ if (!(Test-Path $depsDir)) {
 }
 
 # Download TWAIN DSM from official GitHub releases
+# Note: File naming changed - use twain-dsm-X.X.X.zip format
 $twainDsmVersion = "2.5.1"
-$downloadUrl = "https://github.com/twain/twain-dsm/releases/download/v$twainDsmVersion/TWAINDSM_$twainDsmVersion.zip"
+$downloadUrl = "https://github.com/twain/twain-dsm/releases/download/v$twainDsmVersion/twain-dsm-$twainDsmVersion.zip"
 $zipFile = Join-Path $env:TEMP "twaindsm.zip"
 $extractDir = Join-Path $env:TEMP "twaindsm_extracted"
 

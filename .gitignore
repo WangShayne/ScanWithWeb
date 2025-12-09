@@ -37,3 +37,4 @@ Thumbs.db
 *.bak
 *.orig
 
+update_version.ps1
