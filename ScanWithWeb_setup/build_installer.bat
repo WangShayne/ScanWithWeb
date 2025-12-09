@@ -83,8 +83,8 @@ echo Build completed successfully!
 echo ========================================
 echo.
 echo Output files:
-echo   64-bit: ..\dist\installer\ScanWithWeb_Setup_x64_v2.0.8.exe
-echo   32-bit: ..\dist\installer\ScanWithWeb_Setup_x86_v2.0.8.exe
+echo   64-bit: ..\dist\installer\ScanWithWeb_Setup_x64_v2.0.9.exe
+echo   32-bit: ..\dist\installer\ScanWithWeb_Setup_x86_v2.0.9.exe
 echo.
 
 pause
