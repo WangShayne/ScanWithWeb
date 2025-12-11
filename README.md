@@ -1,9 +1,9 @@
-# ScanWithWeb
+# ScanWithWeb v3.0
 
 [![Build](https://github.com/user/scanwithweb/actions/workflows/build-release.yml/badge.svg)](https://github.com/user/scanwithweb/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A modern web-enabled scanner service that bridges web browsers and local TWAIN scanners via secure WebSocket communication.
+A modern web-enabled scanner service that bridges web browsers and local scanners via secure WebSocket communication. Supports multiple protocols: **TWAIN**, **WIA**, and **ESCL** (network/AirPrint scanners).
 
 [中文文档](./README.zh-CN.md)
 
@@ -11,13 +11,25 @@ A modern web-enabled scanner service that bridges web browsers and local TWAIN s
 
 | Platform | Download | Description |
 |----------|----------|-------------|
-| Windows 64-bit | [ScanWithWeb_Setup_x64.exe](https://github.com/user/scanwithweb/releases/latest) | Recommended for most users |
-| Windows 32-bit | [ScanWithWeb_Setup_x86.exe](https://github.com/user/scanwithweb/releases/latest) | For 32-bit systems |
+| Windows 64-bit | [ScanWithWeb_Setup_x64.exe](https://github.com/user/scanwithweb/releases/latest) | WIA + ESCL support (no TWAIN) |
+| Windows 32-bit | [ScanWithWeb_Setup_x86.exe](https://github.com/user/scanwithweb/releases/latest) | **Full support** (TWAIN + WIA + ESCL) |
 | Portable 64-bit | [ScanWithWeb_Portable_x64.zip](https://github.com/user/scanwithweb/releases/latest) | No installation required |
 | Portable 32-bit | [ScanWithWeb_Portable_x86.zip](https://github.com/user/scanwithweb/releases/latest) | No installation required |
 
+> **Important**: If your scanner only supports TWAIN (most USB scanners), use the **32-bit version**.
+
+## Scanner Protocols
+
+| Protocol | Description | 32-bit App | 64-bit App |
+|----------|-------------|------------|------------|
+| **TWAIN** | Traditional USB scanners | ✅ Required | ❌ Not supported |
+| **WIA** | Windows Image Acquisition | ✅ Supported | ✅ Supported |
+| **ESCL** | Network/AirPrint scanners | ✅ Supported | ✅ Supported |
+
 ## Features
 
+- **Multi-Protocol Support** - TWAIN, WIA (64-bit native), and ESCL (network scanners)
+- **Protocol Filtering** - Filter scanners by protocol type via API
 - **Dual WebSocket Support** - WS (port 8180) for HTTP pages, WSS (port 8181) for HTTPS pages
 - **Auto SSL Certificate** - Self-signed certificate auto-installed to Windows trusted store
 - **Token Authentication** - Session-based security with automatic expiration
@@ -209,6 +221,7 @@ Edit `ScanWithWeb/appsettings.json`:
 | `useAdf` | boolean | true | Use document feeder |
 | `maxPages` | number | -1 | Max pages (-1 = unlimited) |
 | `showUI` | boolean | false | Show scanner dialog |
+| `protocols` | string[] | null | Filter by protocol (["twain", "wia", "escl"]) |
 
 ## Web SDK
 
@@ -271,7 +284,10 @@ git push origin v2.0.6
 
 - Windows 10/11
 - .NET 8.0 Runtime (included in installer)
-- TWAIN-compatible scanner
+- Scanner with one of the following:
+  - **TWAIN driver** (requires 32-bit app)
+  - **WIA driver** (works with 32/64-bit)
+  - **ESCL/AirPrint support** (network scanners)
 
 ## Browser Support
 

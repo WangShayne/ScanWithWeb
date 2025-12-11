@@ -1,9 +1,9 @@
-# ScanWithWeb v2.0
+# ScanWithWeb v3.0
 
 [![构建状态](https://github.com/user/scanwithweb/actions/workflows/build-release.yml/badge.svg)](https://github.com/user/scanwithweb/actions)
 [![许可证: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-一个现代化的 Web 扫描仪服务，通过安全的 WebSocket 通信连接 Web 浏览器和本地 TWAIN 扫描仪。
+一个现代化的 Web 扫描仪服务，通过安全的 WebSocket 通信连接 Web 浏览器和本地扫描仪。支持多协议：**TWAIN**、**WIA** 和 **ESCL**（网络/AirPrint 扫描仪）。
 
 [English Documentation](./README.md)
 
@@ -11,14 +11,26 @@
 
 | 平台 | 下载 | 说明 |
 |------|------|------|
-| Windows 64位 | [ScanWithWeb_Setup_x64.exe](https://github.com/user/scanwithweb/releases/latest) | 推荐大多数用户使用 |
-| Windows 32位 | [ScanWithWeb_Setup_x86.exe](https://github.com/user/scanwithweb/releases/latest) | 适用于32位系统 |
+| Windows 64位 | [ScanWithWeb_Setup_x64.exe](https://github.com/user/scanwithweb/releases/latest) | WIA + ESCL 支持（无 TWAIN） |
+| Windows 32位 | [ScanWithWeb_Setup_x86.exe](https://github.com/user/scanwithweb/releases/latest) | **完整支持**（TWAIN + WIA + ESCL） |
 | 便携版 64位 | [ScanWithWeb_Portable_x64.zip](https://github.com/user/scanwithweb/releases/latest) | 无需安装 |
 | 便携版 32位 | [ScanWithWeb_Portable_x86.zip](https://github.com/user/scanwithweb/releases/latest) | 无需安装 |
 
+> **重要提示**：如果您的扫描仪只支持 TWAIN（大多数 USB 扫描仪），请使用 **32位版本**。
+
+## 扫描仪协议
+
+| 协议 | 说明 | 32位程序 | 64位程序 |
+|------|------|----------|----------|
+| **TWAIN** | 传统 USB 扫描仪 | ✅ 必须使用 | ❌ 不支持 |
+| **WIA** | Windows 图像采集 | ✅ 支持 | ✅ 支持 |
+| **ESCL** | 网络/AirPrint 扫描仪 | ✅ 支持 | ✅ 支持 |
+
 ## 特性
 
-- **双协议 WebSocket** - WS (端口 8180) 用于 HTTP 页面，WSS (端口 8181) 用于 HTTPS 页面
+- **多协议支持** - TWAIN、WIA（64位原生支持）和 ESCL（网络扫描仪）
+- **协议过滤** - 通过 API 按协议类型过滤扫描仪
+- **双协议 WebSocket** - WS（端口 8180）用于 HTTP 页面，WSS（端口 8181）用于 HTTPS 页面
 - **自动 SSL 证书** - 自签名证书自动安装到 Windows 受信任存储
 - **令牌认证** - 基于会话的安全机制，支持自动过期
 - **无广播** - 图像仅发送给请求的客户端
@@ -209,6 +221,7 @@ ScanWithWebForWeb/
 | `useAdf` | boolean | true | 使用自动进纸器 |
 | `maxPages` | number | -1 | 最大页数 (-1 = 无限制) |
 | `showUI` | boolean | false | 显示扫描仪对话框 |
+| `protocols` | string[] | null | 按协议过滤 (["twain", "wia", "escl"]) |
 
 ## Web SDK
 
@@ -271,7 +284,10 @@ git push origin v2.0.6
 
 - Windows 10/11
 - .NET 8.0 运行时（安装程序已包含）
-- TWAIN 兼容扫描仪
+- 支持以下协议之一的扫描仪：
+  - **TWAIN 驱动**（需要 32 位程序）
+  - **WIA 驱动**（32/64 位均可）
+  - **ESCL/AirPrint 支持**（网络扫描仪）
 
 ## 浏览器支持
 
