@@ -14,6 +14,7 @@ public partial class MainForm : Form
     private readonly ILogger<MainForm> _logger;
     private readonly DualWebSocketService _webSocketService;
     private readonly ScannerService _scannerService;
+    private readonly ScannerManager? _scannerManager;
     private readonly SessionManager _sessionManager;
 
     private NotifyIcon? _notifyIcon;
@@ -48,11 +49,13 @@ public partial class MainForm : Form
         ILogger<MainForm> logger,
         DualWebSocketService webSocketService,
         ScannerService scannerService,
+        ScannerManager scannerManager,
         SessionManager sessionManager)
     {
         _logger = logger;
         _webSocketService = webSocketService;
         _scannerService = scannerService;
+        _scannerManager = scannerManager;
         _sessionManager = sessionManager;
 
         InitializeComponent();
@@ -145,7 +148,7 @@ public partial class MainForm : Form
 
         _versionLabel = new Label
         {
-            Text = $"v2.0.6 ({bits})",
+            Text = $"v3.0.0 ({bits})",
             Font = new Font("Segoe UI", 10F),
             ForeColor = Color.FromArgb(108, 117, 125),
             AutoSize = true,
@@ -425,13 +428,31 @@ public partial class MainForm : Form
     {
         base.OnHandleCreated(e);
 
-        // Initialize TWAIN
-        var twainInitialized = _scannerService.Initialize(this.Handle);
+        bool scannersAvailable = false;
 
-        if (!twainInitialized)
+        // Initialize ScannerManager (multi-protocol) if available
+        if (_scannerManager != null)
         {
-            _logger.LogWarning("TWAIN initialization failed: {Error}", _scannerService.TwainError);
-            UpdateScannerStatus(false, _scannerService.TwainError ?? "TWAIN not available");
+            _scannerManager.Initialize(this.Handle);
+            scannersAvailable = _scannerManager.GetAvailableProtocols().Any(p => p.IsAvailable);
+
+            if (!scannersAvailable)
+            {
+                _logger.LogWarning("No scanner protocols available");
+                UpdateScannerStatus(false, "No scanner protocols available");
+            }
+        }
+        else
+        {
+            // Fallback: Initialize TWAIN only
+            var twainInitialized = _scannerService.Initialize(this.Handle);
+
+            if (!twainInitialized)
+            {
+                _logger.LogWarning("TWAIN initialization failed: {Error}", _scannerService.TwainError);
+                UpdateScannerStatus(false, _scannerService.TwainError ?? "TWAIN not available");
+            }
+            scannersAvailable = twainInitialized;
         }
 
         // Start WebSocket service (both WS and WSS)
@@ -440,7 +461,7 @@ public partial class MainForm : Form
         // Update status display
         UpdateServiceStatus();
 
-        UpdateStatus(twainInitialized ? "Service running - waiting for connections" : "Service running - Scanner not available");
+        UpdateStatus(scannersAvailable ? "Service running - waiting for connections" : "Service running - Scanner not available");
     }
 
     private void UpdateServiceStatus()
@@ -479,31 +500,117 @@ public partial class MainForm : Form
             }
         }
 
-        // Scanner Status
+        // Scanner Status - use ScannerManager if available
         if (_scannerStatusIcon != null && _scannerStatusLabel != null)
         {
-            if (!_scannerService.IsTwainAvailable)
+            if (_scannerManager != null)
             {
-                _scannerStatusIcon.ForeColor = _errorColor;
-                _scannerStatusLabel.Text = _scannerService.TwainError ?? "TWAIN not available";
-                _scannerStatusLabel.ForeColor = _errorColor;
-            }
-            else
-            {
-                var scanners = _scannerService.GetAvailableScanners();
-                if (scanners.Count > 0)
+                // Multi-protocol scanner status
+                // Use synchronous method to avoid deadlock on UI thread
+                var protocols = _scannerManager.GetAvailableProtocols()
+                    .Where(p => p.IsAvailable)
+                    .Select(p => p.ProtocolName.ToUpper())
+                    .ToList();
+
+                if (protocols.Count > 0)
                 {
+                    // Show protocols first, then load scanner count async
                     _scannerStatusIcon.ForeColor = _successColor;
-                    _scannerStatusLabel.Text = $"{scanners.Count} scanner(s) available";
+                    var bits = Environment.Is64BitProcess ? "64-bit" : "32-bit";
+                    _scannerStatusLabel.Text = $"Loading... ({bits}, {string.Join("/", protocols)})";
                     _scannerStatusLabel.ForeColor = _successColor;
+
+                    // Load scanner count asynchronously to avoid UI deadlock
+                    _ = LoadScannerCountAsync(protocols);
                 }
                 else
                 {
-                    _scannerStatusIcon.ForeColor = _warningColor;
-                    _scannerStatusLabel.Text = "No scanners detected";
-                    _scannerStatusLabel.ForeColor = _warningColor;
+                    _scannerStatusIcon.ForeColor = _errorColor;
+                    _scannerStatusLabel.Text = "No scanner protocols available";
+                    _scannerStatusLabel.ForeColor = _errorColor;
                 }
             }
+            else
+            {
+                // Legacy TWAIN-only status
+                if (!_scannerService.IsTwainAvailable)
+                {
+                    _scannerStatusIcon.ForeColor = _errorColor;
+                    _scannerStatusLabel.Text = _scannerService.TwainError ?? "TWAIN not available";
+                    _scannerStatusLabel.ForeColor = _errorColor;
+                }
+                else
+                {
+                    var scanners = _scannerService.GetAvailableScanners();
+                    if (scanners.Count > 0)
+                    {
+                        _scannerStatusIcon.ForeColor = _successColor;
+                        _scannerStatusLabel.Text = $"{scanners.Count} scanner(s) available";
+                        _scannerStatusLabel.ForeColor = _successColor;
+                    }
+                    else
+                    {
+                        _scannerStatusIcon.ForeColor = _warningColor;
+                        var bits = Environment.Is64BitProcess ? "64-bit" : "32-bit";
+                        _scannerStatusLabel.Text = $"No scanners detected ({bits} mode)";
+                        _scannerStatusLabel.ForeColor = _warningColor;
+                    }
+                }
+            }
+        }
+    }
+
+    private async Task LoadScannerCountAsync(List<string> protocols)
+    {
+        if (_scannerManager == null) return;
+
+        try
+        {
+            // Run scanner discovery off the UI thread to avoid deadlock
+            var scanners = await Task.Run(() => _scannerManager.GetAllScannersAsync());
+
+            // Update UI on the UI thread
+            if (InvokeRequired)
+            {
+                Invoke(() => UpdateScannerCountUI(scanners.Count, protocols));
+            }
+            else
+            {
+                UpdateScannerCountUI(scanners.Count, protocols);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error loading scanner count");
+        }
+    }
+
+    private void UpdateScannerCountUI(int scannerCount, List<string> protocols)
+    {
+        if (_scannerStatusIcon == null || _scannerStatusLabel == null) return;
+
+        var bits = Environment.Is64BitProcess ? "64-bit" : "32-bit";
+
+        if (scannerCount > 0)
+        {
+            _scannerStatusIcon.ForeColor = _successColor;
+            var protocolInfo = protocols.Count > 0 ? $" ({string.Join(", ", protocols)})" : "";
+            _scannerStatusLabel.Text = $"{scannerCount} scanner(s) available{protocolInfo}";
+            _scannerStatusLabel.ForeColor = _successColor;
+        }
+        else
+        {
+            _scannerStatusIcon.ForeColor = _warningColor;
+            // Show helpful message for 64-bit mode - TWAIN requires 32-bit
+            if (Environment.Is64BitProcess)
+            {
+                _scannerStatusLabel.Text = $"No scanners - TWAIN needs 32-bit app";
+            }
+            else
+            {
+                _scannerStatusLabel.Text = $"No scanners detected ({bits})";
+            }
+            _scannerStatusLabel.ForeColor = _warningColor;
         }
     }
 
@@ -529,6 +636,7 @@ public partial class MainForm : Form
 
         // Actually closing - cleanup
         _webSocketService.Stop();
+        _scannerManager?.Shutdown();
         _scannerService.Close();
 
         base.OnFormClosing(e);

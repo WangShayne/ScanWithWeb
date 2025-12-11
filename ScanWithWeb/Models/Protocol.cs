@@ -67,6 +67,14 @@ public class ScanSettings
     /// </summary>
     [JsonPropertyName("continuousScan")]
     public bool ContinuousScan { get; set; } = false;
+
+    /// <summary>
+    /// Filter scanners by protocol types (e.g., ["twain", "wia", "escl"])
+    /// If null or empty, all protocols are included
+    /// </summary>
+    [JsonPropertyName("protocols")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? Protocols { get; set; }
 }
 
 #endregion
@@ -131,6 +139,13 @@ public class ScannerInfo
 
     [JsonPropertyName("capabilities")]
     public ScannerCapabilities? Capabilities { get; set; }
+
+    /// <summary>
+    /// Protocol type (twain, wia, escl) - optional for backward compatibility
+    /// </summary>
+    [JsonPropertyName("protocol")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Protocol { get; set; }
 }
 
 /// <summary>

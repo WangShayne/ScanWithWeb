@@ -259,6 +259,55 @@
             border-color: #2980b9;
             color: #2980b9;
         }
+
+        .protocol-info {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
+            margin-bottom: 15px;
+            padding: 12px 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            font-size: 13px;
+            color: #666;
+        }
+        .protocol-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            color: white;
+            margin-right: 5px;
+        }
+        .protocol-badge.twain { background: #6c757d; }
+        .protocol-badge.wia { background: #0d6efd; }
+        .protocol-badge.escl { background: #198754; }
+
+        .protocol-filter {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+            padding: 10px 15px;
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            flex-wrap: wrap;
+        }
+        .protocol-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .protocol-checkbox input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
@@ -266,6 +315,31 @@
         <div class="card">
             <h1>ScanWithWeb Test Page</h1>
             <p class="subtitle">Test scanner connection and scanning functionality</p>
+
+            <div class="protocol-info">
+                <span class="protocol-badge twain">TWAIN</span> Local USB scanners (<strong>requires 32-bit app</strong>)
+                <span class="protocol-badge wia">WIA</span> Windows scanners (64-bit native)
+                <span class="protocol-badge escl">ESCL</span> Network/AirPrint scanners
+            </div>
+
+            <div class="protocol-note" style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 10px 15px; margin-bottom: 15px; font-size: 13px; color: #856404;">
+                <strong>💡 Tip:</strong> If your scanner only supports TWAIN (most USB scanners), please use the <strong>32-bit version</strong> of ScanWithWeb (ScanWithWeb-x86.exe).
+                WIA and ESCL protocols work with both 32-bit and 64-bit versions.
+            </div>
+
+            <div class="protocol-filter">
+                <label style="font-weight: 600; margin-right: 15px;">Protocol Filter:</label>
+                <label class="protocol-checkbox">
+                    <input type="checkbox" name="protocol-filter" value="twain" checked> TWAIN
+                </label>
+                <label class="protocol-checkbox">
+                    <input type="checkbox" name="protocol-filter" value="wia" checked> WIA
+                </label>
+                <label class="protocol-checkbox">
+                    <input type="checkbox" name="protocol-filter" value="escl" checked> ESCL
+                </label>
+                <button id="btnRefresh" class="btn-secondary" style="padding: 6px 12px; margin-left: 10px;">Refresh</button>
+            </div>
 
             <div class="protocol-select">
                 <label>
@@ -477,12 +551,22 @@
             });
         }
 
+        // Get selected protocol filters
+        function getSelectedProtocols() {
+            const checkboxes = document.querySelectorAll('input[name="protocol-filter"]:checked');
+            return Array.from(checkboxes).map(cb => cb.value);
+        }
+
         // Get scanners
         function getScanners() {
-            log('Getting scanner list...');
+            const protocols = getSelectedProtocols();
+            log(`Getting scanner list... (protocols: ${protocols.length > 0 ? protocols.join(', ') : 'all'})`);
             send({
                 action: 'list_scanners',
-                token: token
+                token: token,
+                settings: {
+                    protocols: protocols.length > 0 ? protocols : null
+                }
             });
         }
 
@@ -649,13 +733,26 @@
 
             scanners.forEach(s => {
                 const opt = document.createElement('option');
-                opt.value = s.name || s;
-                opt.textContent = s.name || s;
+                opt.value = s.id || s.name || s;
+                // Show protocol label if available
+                const protocolLabel = s.protocol ? `[${s.protocol.toUpperCase()}] ` : '';
+                opt.textContent = protocolLabel + (s.name || s);
                 scannerSelect.appendChild(opt);
             });
 
             scannerSelect.disabled = false;
-            log(`Found ${scanners.length} scanner(s)`, 'success');
+
+            // Count scanners by protocol
+            const protocols = {};
+            scanners.forEach(s => {
+                const proto = s.protocol || 'unknown';
+                protocols[proto] = (protocols[proto] || 0) + 1;
+            });
+            const protocolInfo = Object.entries(protocols)
+                .map(([p, c]) => `${p.toUpperCase()}:${c}`)
+                .join(', ');
+
+            log(`Found ${scanners.length} scanner(s) (${protocolInfo})`, 'success');
         }
 
         // Handle scanned image
@@ -716,6 +813,13 @@
         btnScan.addEventListener('click', startScan);
         btnStop.addEventListener('click', stopScan);
         btnClear.addEventListener('click', clearImages);
+        document.getElementById('btnRefresh').addEventListener('click', () => {
+            if (token) {
+                getScanners();
+            } else {
+                log('Not authenticated - connect first', 'warn');
+            }
+        });
         scannerSelect.addEventListener('change', (e) => selectScanner(e.target.value));
 
         // Auto-connect on page load

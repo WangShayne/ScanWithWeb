@@ -63,7 +63,7 @@ public class ScannerService : IDisposable
             // (Assembly.Location is empty in single-file mode)
             var appId = TWIdentity.Create(
                 DataGroups.Image,
-                new Version(2, 0, 9),
+                new Version(3, 0, 0),
                 "ScanWithWeb Team",
                 "ScanWithWeb",
                 "ScanWithWeb Service",
@@ -211,15 +211,20 @@ public class ScannerService : IDisposable
     public List<ScannerInfo> GetAvailableScanners()
     {
         var scanners = new List<ScannerInfo>();
+        var bits = Environment.Is64BitProcess ? "64-bit" : "32-bit";
 
         if (_twain == null || _twain.State < 3)
         {
-            _logger.LogWarning("TWAIN not initialized");
+            _logger.LogWarning("TWAIN not initialized (State: {State}, {Bits})",
+                _twain?.State ?? 0, bits);
             return scanners;
         }
 
+        _logger.LogDebug("Enumerating TWAIN sources ({Bits} mode, State: {State})...", bits, _twain.State);
+
         foreach (var source in _twain)
         {
+            _logger.LogDebug("Found scanner: {Name}", source.Name);
             scanners.Add(new ScannerInfo
             {
                 Name = source.Name,
@@ -228,7 +233,16 @@ public class ScannerService : IDisposable
             });
         }
 
-        _logger.LogInformation("Found {Count} scanners", scanners.Count);
+        if (scanners.Count == 0)
+        {
+            _logger.LogWarning("No TWAIN scanners found in {Bits} mode. " +
+                "If your scanner has only 32-bit drivers, try using the 32-bit version of ScanWithWeb.", bits);
+        }
+        else
+        {
+            _logger.LogInformation("Found {Count} scanner(s) in {Bits} mode", scanners.Count, bits);
+        }
+
         return scanners;
     }
 

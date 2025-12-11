@@ -1,7 +1,9 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using ScanWithWeb.Interfaces;
 using ScanWithWeb.Services;
+using ScanWithWeb.Services.Protocols;
 
 namespace ScanWithWeb;
 
@@ -170,11 +172,48 @@ internal static class Program
             return new SessionManager(logger, tokenExpiration, maxSessions);
         });
 
-        // Scanner Service
+        // Scanner Service (legacy - kept for backwards compatibility)
         services.AddSingleton(sp =>
         {
             var logger = sp.GetRequiredService<ILogger<ScannerService>>();
             return new ScannerService(logger);
+        });
+
+        // Scanner Protocols
+        services.AddSingleton<TwainScannerProtocol>(sp =>
+        {
+            var logger = sp.GetRequiredService<ILogger<TwainScannerProtocol>>();
+            return new TwainScannerProtocol(logger);
+        });
+
+        services.AddSingleton<WiaScannerProtocol>(sp =>
+        {
+            var logger = sp.GetRequiredService<ILogger<WiaScannerProtocol>>();
+            return new WiaScannerProtocol(logger);
+        });
+
+        services.AddSingleton<EsclScannerProtocol>(sp =>
+        {
+            var logger = sp.GetRequiredService<ILogger<EsclScannerProtocol>>();
+            return new EsclScannerProtocol(logger);
+        });
+
+        // Scanner Manager (unified protocol management)
+        services.AddSingleton<ScannerManager>(sp =>
+        {
+            var logger = sp.GetRequiredService<ILogger<ScannerManager>>();
+            var manager = new ScannerManager(logger);
+
+            // Register all available protocols
+            var twain = sp.GetRequiredService<TwainScannerProtocol>();
+            var wia = sp.GetRequiredService<WiaScannerProtocol>();
+            var escl = sp.GetRequiredService<EsclScannerProtocol>();
+
+            manager.RegisterProtocol(twain);
+            manager.RegisterProtocol(wia);
+            manager.RegisterProtocol(escl);
+
+            return manager;
         });
 
         // Dual WebSocket Service (supports both WS and WSS)
@@ -183,12 +222,13 @@ internal static class Program
             var logger = sp.GetRequiredService<ILogger<DualWebSocketService>>();
             var sessionManager = sp.GetRequiredService<SessionManager>();
             var scannerService = sp.GetRequiredService<ScannerService>();
+            var scannerManager = sp.GetRequiredService<ScannerManager>();
             var certificateManager = sp.GetRequiredService<CertificateManager>();
 
             var wssPort = configuration.GetValue("WebSocket:WssPort", 8181);
             var wsPort = configuration.GetValue("WebSocket:WsPort", 8180);
 
-            return new DualWebSocketService(logger, sessionManager, scannerService, certificateManager, wssPort, wsPort);
+            return new DualWebSocketService(logger, sessionManager, scannerService, scannerManager, certificateManager, wssPort, wsPort);
         });
 
         // Keep legacy WebSocketService for backwards compatibility (optional)
@@ -214,6 +254,15 @@ internal static class Program
         });
 
         // Main form
-        services.AddSingleton<MainForm>();
+        services.AddSingleton(sp =>
+        {
+            var logger = sp.GetRequiredService<ILogger<MainForm>>();
+            var webSocketService = sp.GetRequiredService<DualWebSocketService>();
+            var scannerService = sp.GetRequiredService<ScannerService>();
+            var scannerManager = sp.GetRequiredService<ScannerManager>();
+            var sessionManager = sp.GetRequiredService<SessionManager>();
+
+            return new MainForm(logger, webSocketService, scannerService, scannerManager, sessionManager);
+        });
     }
 }

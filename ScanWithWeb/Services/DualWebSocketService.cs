@@ -16,6 +16,7 @@ public class DualWebSocketService : IDisposable
     private readonly ILogger<DualWebSocketService> _logger;
     private readonly SessionManager _sessionManager;
     private readonly ScannerService _scannerService;
+    private readonly ScannerManager? _scannerManager;
     private readonly CertificateManager _certificateManager;
 
     private WebSocketServer? _wssServer;
@@ -39,10 +40,23 @@ public class DualWebSocketService : IDisposable
         CertificateManager certificateManager,
         int wssPort = 8181,
         int wsPort = 8180)
+        : this(logger, sessionManager, scannerService, null, certificateManager, wssPort, wsPort)
+    {
+    }
+
+    public DualWebSocketService(
+        ILogger<DualWebSocketService> logger,
+        SessionManager sessionManager,
+        ScannerService scannerService,
+        ScannerManager? scannerManager,
+        CertificateManager certificateManager,
+        int wssPort = 8181,
+        int wsPort = 8180)
     {
         _logger = logger;
         _sessionManager = sessionManager;
         _scannerService = scannerService;
+        _scannerManager = scannerManager;
         _certificateManager = certificateManager;
         _wssPort = wssPort;
         _wsPort = wsPort;
@@ -284,7 +298,21 @@ public class DualWebSocketService : IDisposable
     {
         if (!await ValidateSession(socket, request)) return;
 
-        var scanners = _scannerService.GetAvailableScanners();
+        List<ScannerInfo> scanners;
+
+        // Get protocol filter from request settings
+        var protocolFilter = request.Settings?.Protocols;
+
+        // Use ScannerManager if available (multi-protocol support)
+        if (_scannerManager != null)
+        {
+            scanners = await _scannerManager.GetAllScannersAsync(protocolFilter);
+        }
+        else
+        {
+            scanners = _scannerService.GetAvailableScanners();
+        }
+
         var response = new ScannersResponse
         {
             Action = ProtocolActions.ListScanners,
@@ -308,7 +336,18 @@ public class DualWebSocketService : IDisposable
             return;
         }
 
-        var success = _scannerService.SelectScanner(scannerName);
+        bool success;
+
+        // Use ScannerManager if available (multi-protocol support)
+        if (_scannerManager != null)
+        {
+            success = _scannerManager.SelectScanner(scannerName);
+        }
+        else
+        {
+            success = _scannerService.SelectScanner(scannerName);
+        }
+
         if (success && session != null)
         {
             session.SelectedScanner = scannerName;
@@ -330,7 +369,27 @@ public class DualWebSocketService : IDisposable
     {
         if (!await ValidateSession(socket, request)) return;
 
-        var capabilities = _scannerService.GetCurrentScannerCapabilities();
+        ScannerCapabilities? capabilities;
+        string scannerName;
+
+        // Use ScannerManager if available (multi-protocol support)
+        if (_scannerManager != null)
+        {
+            var currentId = _scannerManager.CurrentScannerId;
+            if (string.IsNullOrEmpty(currentId))
+            {
+                await SendError(socket, request.RequestId, ErrorCodes.ScannerNotFound, "No scanner selected");
+                return;
+            }
+            capabilities = _scannerManager.GetCapabilities(currentId);
+            scannerName = currentId;
+        }
+        else
+        {
+            capabilities = _scannerService.GetCurrentScannerCapabilities();
+            scannerName = _scannerService.CurrentScannerName ?? "Unknown";
+        }
+
         if (capabilities == null)
         {
             await SendError(socket, request.RequestId, ErrorCodes.ScannerNotFound, "No scanner selected");
@@ -339,7 +398,7 @@ public class DualWebSocketService : IDisposable
 
         var scannerInfo = new ScannerInfo
         {
-            Name = _scannerService.CurrentScannerName ?? "Unknown",
+            Name = scannerName,
             Capabilities = capabilities
         };
 
@@ -374,11 +433,31 @@ public class DualWebSocketService : IDisposable
             // Apply scan settings if provided
             if (request.Settings != null)
             {
-                _scannerService.ApplySettings(request.Settings);
+                if (_scannerManager != null)
+                {
+                    _scannerManager.ApplySettings(request.Settings);
+                }
+                else
+                {
+                    _scannerService.ApplySettings(request.Settings);
+                }
             }
 
-            // Start scan - images will be sent via ImageScanned event
-            var success = await _scannerService.StartScanAsync(session, request.RequestId);
+            bool success;
+
+            // Use ScannerManager if available (multi-protocol support)
+            if (_scannerManager != null)
+            {
+                // Wire up event handlers for this scan
+                WireUpScannerManagerEvents(session, request.RequestId);
+                success = await _scannerManager.StartScanAsync(request.RequestId);
+            }
+            else
+            {
+                // Start scan - images will be sent via ImageScanned event
+                success = await _scannerService.StartScanAsync(session, request.RequestId);
+            }
+
             if (!success)
             {
                 await SendError(socket, request.RequestId, ErrorCodes.ScanFailed, "Failed to start scan");
@@ -393,6 +472,62 @@ public class DualWebSocketService : IDisposable
         }
     }
 
+    private void WireUpScannerManagerEvents(ClientSession session, string requestId)
+    {
+        if (_scannerManager == null) return;
+
+        // Handle image scanned event
+        void onImageScanned(object? sender, Models.ProtocolImageScannedEventArgs e)
+        {
+            if (e.RequestId != requestId) return;
+
+            _ = Task.Run(async () =>
+            {
+                await SendImageToSession(session, e.ImageData, e.Metadata, e.RequestId, e.PageNumber);
+            });
+        }
+
+        // Handle scan completed event
+        void onScanCompleted(object? sender, Models.ProtocolScanCompletedEventArgs e)
+        {
+            if (e.RequestId != requestId) return;
+
+            _ = Task.Run(async () =>
+            {
+                await SendScanComplete(session, e.RequestId, e.TotalPages);
+            });
+
+            // Unsubscribe events
+            _scannerManager.ImageScanned -= onImageScanned;
+            _scannerManager.ScanCompleted -= onScanCompleted;
+            _scannerManager.ScanError -= onScanError;
+        }
+
+        // Handle scan error event
+        void onScanError(object? sender, Models.ProtocolScanErrorEventArgs e)
+        {
+            if (e.RequestId != requestId) return;
+
+            _ = Task.Run(async () =>
+            {
+                if (session.Socket != null && session.Socket.IsAvailable)
+                {
+                    await SendError(session.Socket, e.RequestId, ErrorCodes.ScanFailed, e.ErrorMessage);
+                }
+                session.IsScanning = false;
+            });
+
+            // Unsubscribe events
+            _scannerManager.ImageScanned -= onImageScanned;
+            _scannerManager.ScanCompleted -= onScanCompleted;
+            _scannerManager.ScanError -= onScanError;
+        }
+
+        _scannerManager.ImageScanned += onImageScanned;
+        _scannerManager.ScanCompleted += onScanCompleted;
+        _scannerManager.ScanError += onScanError;
+    }
+
     private async Task HandleStopScan(IWebSocketConnection socket, ScanRequest request)
     {
         if (!await ValidateSession(socket, request)) return;
@@ -400,7 +535,16 @@ public class DualWebSocketService : IDisposable
         var session = _sessionManager.GetSessionBySocket(socket);
         if (session == null) return;
 
-        _scannerService.StopScan();
+        // Use ScannerManager if available (multi-protocol support)
+        if (_scannerManager != null)
+        {
+            _scannerManager.StopScan();
+        }
+        else
+        {
+            _scannerService.StopScan();
+        }
+
         session.IsScanning = false;
 
         var response = new ScanResponse
