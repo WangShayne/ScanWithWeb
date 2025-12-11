@@ -1,4 +1,4 @@
-# ScanWithWeb v2.0
+# ScanWithWeb
 
 [![Build](https://github.com/user/scanwithweb/actions/workflows/build-release.yml/badge.svg)](https://github.com/user/scanwithweb/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -285,3 +285,4 @@ git push origin v2.0.6
 ## License
 
 MIT License
+
