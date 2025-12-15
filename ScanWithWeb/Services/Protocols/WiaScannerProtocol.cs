@@ -304,24 +304,28 @@ public class WiaScannerProtocol : BaseScannerProtocol
                 _currentPageNumber++;
 
                 // Get image data
-                byte[] imageData = imageFile.FileData.BinaryData;
+                byte[] rawImageData = imageFile.FileData.BinaryData;
 
                 // Get image dimensions
                 int width = imageFile.Width;
                 int height = imageFile.Height;
                 double horizontalResolution = imageFile.HorizontalResolution;
 
+                // Compress large images to JPEG to avoid WebSocket message size issues
+                var format = "bmp";
+                var imageData = ImageCompressor.CompressIfNeeded(rawImageData, ref format, Logger);
+
                 var metadata = new ImageMetadata
                 {
                     Width = width,
                     Height = height,
-                    Format = "bmp",
+                    Format = format,
                     SizeBytes = imageData.Length,
                     Dpi = (int)horizontalResolution
                 };
 
-                Logger.LogInformation("[WIA] Scan completed: {Width}x{Height}, {Size} bytes",
-                    width, height, imageData.Length);
+                Logger.LogInformation("[WIA] Scan completed: {Width}x{Height}, {Format}, {Size:N0} bytes",
+                    width, height, format, imageData.Length);
 
                 RaiseImageScanned(requestId, imageData, metadata, _currentPageNumber);
                 RaiseScanCompleted(requestId, _currentPageNumber);

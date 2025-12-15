@@ -19,6 +19,10 @@ public class TwainScannerProtocol : BaseScannerProtocol
     private int _currentPageNumber;
     private string? _currentRequestId;
 
+    // Cache DataSource objects by ID for later selection
+    // This helps handle scanners with empty names that get populated later
+    private readonly Dictionary<string, DataSource> _sourceCache = new();
+
     public override string ProtocolName => "twain";
 
     public TwainScannerProtocol(ILogger<TwainScannerProtocol> logger) : base(logger)
@@ -35,7 +39,7 @@ public class TwainScannerProtocol : BaseScannerProtocol
             // Create TWIdentity manually to avoid issues with single-file publish
             var appId = TWIdentity.Create(
                 DataGroups.Image,
-                new Version(2, 0, 9),
+                new Version(3, 0, 3),
                 "ScanWithWeb Team",
                 "ScanWithWeb",
                 "ScanWithWeb Service",
@@ -141,19 +145,30 @@ public class TwainScannerProtocol : BaseScannerProtocol
                 {
                     using var ms = new MemoryStream();
                     stream.CopyTo(ms);
-                    var imageData = ms.ToArray();
+                    var rawImageData = ms.ToArray();
 
-                    // Get image dimensions
+                    // Get image dimensions before compression
                     ms.Position = 0;
                     using var img = Image.FromStream(ms);
+                    var width = img.Width;
+                    var height = img.Height;
+                    var dpi = (int)img.HorizontalResolution;
+
+                    // Compress large images to JPEG to avoid WebSocket message size issues
+                    var format = "bmp";
+                    var imageData = ImageCompressor.CompressIfNeeded(rawImageData, ref format, Logger);
+
                     var metadata = new ImageMetadata
                     {
-                        Width = img.Width,
-                        Height = img.Height,
-                        Format = "bmp",
+                        Width = width,
+                        Height = height,
+                        Format = format,
                         SizeBytes = imageData.Length,
-                        Dpi = (int)img.HorizontalResolution
+                        Dpi = dpi
                     };
+
+                    Logger.LogDebug("[TWAIN] Image processed: {Width}x{Height}, {Format}, {Size:N0} bytes",
+                        width, height, format, imageData.Length);
 
                     if (_currentRequestId != null)
                     {
@@ -163,16 +178,27 @@ public class TwainScannerProtocol : BaseScannerProtocol
             }
             else if (!string.IsNullOrEmpty(e.FileDataPath))
             {
-                var imageData = File.ReadAllBytes(e.FileDataPath);
+                var rawImageData = File.ReadAllBytes(e.FileDataPath);
                 using var img = Image.FromFile(e.FileDataPath);
+                var width = img.Width;
+                var height = img.Height;
+                var dpi = (int)img.HorizontalResolution;
+
+                // Compress large images to JPEG
+                var format = Path.GetExtension(e.FileDataPath).TrimStart('.');
+                var imageData = ImageCompressor.CompressIfNeeded(rawImageData, ref format, Logger);
+
                 var metadata = new ImageMetadata
                 {
-                    Width = img.Width,
-                    Height = img.Height,
-                    Format = Path.GetExtension(e.FileDataPath).TrimStart('.'),
+                    Width = width,
+                    Height = height,
+                    Format = format,
                     SizeBytes = imageData.Length,
-                    Dpi = (int)img.HorizontalResolution
+                    Dpi = dpi
                 };
+
+                Logger.LogDebug("[TWAIN] File image processed: {Width}x{Height}, {Format}, {Size:N0} bytes",
+                    width, height, format, imageData.Length);
 
                 if (_currentRequestId != null)
                 {
@@ -207,15 +233,43 @@ public class TwainScannerProtocol : BaseScannerProtocol
             return scanners;
         }
 
+        // Clear the source cache before re-enumerating
+        _sourceCache.Clear();
+
         Logger.LogDebug("[TWAIN] Enumerating sources ({Bits} mode, State: {State})...", bits, _twain.State);
 
+        int index = 0;
         foreach (var source in _twain)
         {
-            Logger.LogDebug("[TWAIN] Found scanner: {Name}", source.Name);
+            index++;
+
+            // Generate a unique ID for this scanner
+            // Use the name if available, otherwise use index-based ID
+            string scannerId;
+            string scannerName;
+
+            if (!string.IsNullOrWhiteSpace(source.Name))
+            {
+                scannerId = source.Name;
+                scannerName = source.Name;
+            }
+            else
+            {
+                // Scanner name is empty (might be loaded asynchronously by driver)
+                // Use index-based ID and a placeholder name
+                scannerId = $"TWAIN_Scanner_{index}";
+                scannerName = $"TWAIN Scanner #{index}";
+                Logger.LogDebug("[TWAIN] Scanner at index {Index} has empty name, using fallback ID: {Id}", index, scannerId);
+            }
+
+            // Cache the DataSource object for later selection
+            _sourceCache[scannerId] = source;
+
+            Logger.LogDebug("[TWAIN] Found scanner: {Name} (ID: {Id})", scannerName, scannerId);
             scanners.Add(new ScannerInfo
             {
-                Name = source.Name,
-                Id = source.Name,
+                Name = scannerName,
+                Id = scannerId,
                 IsDefault = _twain.CurrentSource?.Name == source.Name
             });
         }
@@ -244,17 +298,31 @@ public class TwainScannerProtocol : BaseScannerProtocol
             _twain.CurrentSource?.Close();
         }
 
-        var source = _twain.FirstOrDefault(s => s.Name == scannerId);
+        // First try to find the source in the cache
+        DataSource? source = null;
+        if (_sourceCache.TryGetValue(scannerId, out var cachedSource))
+        {
+            source = cachedSource;
+            Logger.LogDebug("[TWAIN] Found scanner in cache: {Id}", scannerId);
+        }
+        else
+        {
+            // Fallback: search by name in case cache was cleared
+            source = _twain.FirstOrDefault(s => s.Name == scannerId);
+        }
+
         if (source == null)
         {
-            Logger.LogWarning("[TWAIN] Scanner not found: {Name}", scannerId);
+            Logger.LogWarning("[TWAIN] Scanner not found: {Id}", scannerId);
             return false;
         }
 
         if (source.Open() == ReturnCode.Success)
         {
+            // After opening, the name might now be available
+            var actualName = !string.IsNullOrWhiteSpace(source.Name) ? source.Name : scannerId;
             CurrentScannerId = scannerId;
-            Logger.LogInformation("[TWAIN] Scanner selected: {Name}", scannerId);
+            Logger.LogInformation("[TWAIN] Scanner selected: {Name} (ID: {Id})", actualName, scannerId);
             return true;
         }
 

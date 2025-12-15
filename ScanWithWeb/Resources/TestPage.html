@@ -177,6 +177,44 @@
         .gallery-item:hover .download-btn {
             opacity: 1;
         }
+        .gallery-item .image-controls {
+            position: absolute;
+            bottom: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 6px;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        .gallery-item:hover .image-controls {
+            opacity: 1;
+        }
+        .gallery-item .rotate-btn {
+            background: rgba(255,255,255,0.9);
+            color: #333;
+            border: none;
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .gallery-item .rotate-btn:hover {
+            background: #2980b9;
+            color: white;
+        }
+        .gallery-item .img-container {
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 150px;
+            background: #f8f9fa;
+        }
+        .gallery-item .img-container img {
+            transition: transform 0.3s ease;
+        }
 
         .log-panel {
             background: #1e1e1e;
@@ -420,8 +458,17 @@
                     </label>
                     <label class="checkbox-label" style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
                         <input type="checkbox" id="continuousScan">
-                        <span>Continuous Scan</span>
+                        <span>Continuous Scan (Auto)</span>
                     </label>
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <label for="scanInterval">Interval:</label>
+                        <select id="scanInterval" style="padding: 4px 8px; border-radius: 4px; border: 1px solid #ddd;">
+                            <option value="1000">1 sec</option>
+                            <option value="2000" selected>2 sec</option>
+                            <option value="3000">3 sec</option>
+                            <option value="5000">5 sec</option>
+                        </select>
+                    </div>
                     <div style="display: flex; align-items: center; gap: 6px;">
                         <label for="maxPages">Max Pages:</label>
                         <select id="maxPages" style="padding: 4px 8px; border-radius: 4px; border: 1px solid #ddd;">
@@ -435,7 +482,7 @@
                     </div>
                 </div>
                 <div class="tip-text" style="font-size: 12px; color: #888; margin-top: 8px;">
-                    💡 <strong>Continuous Scan</strong>: For flatbed scanners - prompts for next page after each scan.
+                    💡 <strong>Continuous Scan</strong>: Automatically scans next page after interval. Click <strong>Stop</strong> to finish.
                 </div>
             </div>
 
@@ -473,6 +520,7 @@
         let scanning = false;
         let images = [];
         let currentPage = 0;
+        let continuousScanTimer = null;  // Timer for auto-continuing scans
 
         // DOM elements
         const wsStatus = document.getElementById('wsStatus');
@@ -652,10 +700,24 @@
         // Stop scan
         function stopScan() {
             log('Stopping scan...');
+
+            // Clear continuous scan timer if active
+            if (continuousScanTimer) {
+                clearTimeout(continuousScanTimer);
+                continuousScanTimer = null;
+                log('Continuous scan stopped', 'info');
+            }
+
             send({
                 action: 'stop_scan',
                 token: token
             });
+
+            // Reset button states immediately for continuous scan stop
+            scanning = false;
+            btnScan.disabled = false;
+            btnStop.disabled = true;
+            progressBar.classList.remove('active');
         }
 
         // Handle incoming messages
@@ -783,11 +845,22 @@
             }
 
             scanners.forEach(s => {
+                // Handle different scanner object formats
+                const scannerId = typeof s === 'string' ? s : (s.id || s.name || null);
+                const scannerName = typeof s === 'string' ? s : (s.name || s.id || 'Unknown Scanner');
+                const protocol = typeof s === 'object' ? s.protocol : null;
+
+                // Skip only if we have no valid identifier at all
+                if (!scannerId) {
+                    log(`Skipping scanner with no identifier: ${JSON.stringify(s)}`, 'warn');
+                    return;
+                }
+
                 const opt = document.createElement('option');
-                opt.value = s.id || s.name || s;
+                opt.value = scannerId;
                 // Show protocol label if available
-                const protocolLabel = s.protocol ? `[${s.protocol.toUpperCase()}] ` : '';
-                opt.textContent = protocolLabel + (s.name || s);
+                const protocolLabel = protocol ? `[${protocol.toUpperCase()}] ` : '';
+                opt.textContent = protocolLabel + scannerName;
                 scannerSelect.appendChild(opt);
             });
 
@@ -821,7 +894,7 @@
             const blob = new Blob([byteArray], { type: 'image/png' });
             const url = URL.createObjectURL(blob);
 
-            images.push({ url, pageNumber: currentPage, blob });
+            images.push({ url, pageNumber: currentPage, blob, rotation: 0 });
 
             // Update gallery
             updateGallery();
@@ -831,30 +904,33 @@
         function handleContinuousScanCheck() {
             const continuousScan = document.getElementById('continuousScan').checked;
             const maxPagesValue = parseInt(document.getElementById('maxPages').value);
+            const scanInterval = parseInt(document.getElementById('scanInterval').value);
 
             // Check if we've reached max pages
             if (maxPagesValue > 0 && currentPage >= maxPagesValue) {
-                log('Max pages reached, stopping continuous scan', 'info');
+                log(`Max pages (${maxPagesValue}) reached, stopping continuous scan`, 'info');
                 btnScan.disabled = false;
+                btnStop.disabled = true;
                 return;
             }
 
             if (continuousScan) {
-                // Show confirmation dialog for next page
-                const continueScanning = confirm(`Page ${currentPage} scanned.\n\nPlace next document and click OK to continue scanning,\nor Cancel to finish.`);
+                // Auto-continue scanning after interval
+                const intervalSeconds = scanInterval / 1000;
+                log(`Next scan in ${intervalSeconds} second(s)... (Click Stop to finish)`, 'info');
 
-                if (continueScanning) {
-                    log('Continuing scan for next page...', 'info');
-                    // Small delay before starting next scan
-                    setTimeout(() => {
-                        startScan(true);  // Pass true to indicate continuation
-                    }, 500);
-                } else {
-                    log('Continuous scan stopped by user', 'info');
-                    btnScan.disabled = false;
-                }
+                // Keep Stop button enabled during wait
+                btnStop.disabled = false;
+                progressBar.classList.add('active');
+
+                continuousScanTimer = setTimeout(() => {
+                    continuousScanTimer = null;
+                    log('Auto-starting next scan...', 'info');
+                    startScan(true);  // Pass true to indicate continuation
+                }, scanInterval);
             } else {
                 btnScan.disabled = false;
+                btnStop.disabled = true;
             }
         }
 
@@ -874,9 +950,15 @@
 
             gallery.innerHTML = images.map((img, i) => `
                 <div class="gallery-item">
-                    <img src="${img.url}" alt="Page ${img.pageNumber}">
+                    <div class="img-container">
+                        <img src="${img.url}" alt="Page ${img.pageNumber}" style="transform: rotate(${img.rotation}deg)">
+                    </div>
                     <span class="page-num">Page ${img.pageNumber}</span>
-                    <a href="${img.url}" download="scan_page_${img.pageNumber}.png" class="download-btn">Download</a>
+                    <a href="#" onclick="downloadRotatedImage(${i}); return false;" class="download-btn">Download</a>
+                    <div class="image-controls">
+                        <button class="rotate-btn" onclick="rotateImage(${i}, -90)" title="Rotate Left">↺</button>
+                        <button class="rotate-btn" onclick="rotateImage(${i}, 90)" title="Rotate Right">↻</button>
+                    </div>
                 </div>
             `).join('');
         }
@@ -888,6 +970,65 @@
             currentPage = 0;
             updateGallery();
             log('Images cleared');
+        }
+
+        // Rotate image by degrees (90 or -90)
+        function rotateImage(index, degrees) {
+            if (index >= 0 && index < images.length) {
+                images[index].rotation = (images[index].rotation + degrees + 360) % 360;
+                updateGallery();
+                log(`Page ${images[index].pageNumber} rotated to ${images[index].rotation}°`, 'info');
+            }
+        }
+
+        // Download image with rotation applied
+        function downloadRotatedImage(index) {
+            if (index < 0 || index >= images.length) return;
+
+            const img = images[index];
+            const rotation = img.rotation;
+
+            // If no rotation, download directly
+            if (rotation === 0) {
+                const a = document.createElement('a');
+                a.href = img.url;
+                a.download = `scan_page_${img.pageNumber}.png`;
+                a.click();
+                return;
+            }
+
+            // Create canvas to apply rotation
+            const image = new Image();
+            image.onload = function() {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+
+                // Swap dimensions for 90/270 degree rotation
+                if (rotation === 90 || rotation === 270) {
+                    canvas.width = image.height;
+                    canvas.height = image.width;
+                } else {
+                    canvas.width = image.width;
+                    canvas.height = image.height;
+                }
+
+                // Move to center, rotate, then draw
+                ctx.translate(canvas.width / 2, canvas.height / 2);
+                ctx.rotate(rotation * Math.PI / 180);
+                ctx.drawImage(image, -image.width / 2, -image.height / 2);
+
+                // Download
+                canvas.toBlob(function(blob) {
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `scan_page_${img.pageNumber}.png`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    log(`Downloaded page ${img.pageNumber} with ${rotation}° rotation`, 'success');
+                }, 'image/png');
+            };
+            image.src = img.url;
         }
 
         // Event listeners
