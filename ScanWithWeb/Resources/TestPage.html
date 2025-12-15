@@ -406,6 +406,39 @@
                 </div>
             </div>
 
+            <!-- Advanced Settings -->
+            <div style="margin-bottom: 15px;">
+                <div style="font-weight: 600; margin-bottom: 10px; color: #555; font-size: 14px;">Advanced Settings</div>
+                <div class="settings-row" style="display: flex; flex-wrap: wrap; gap: 15px;">
+                    <label class="checkbox-label" style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                        <input type="checkbox" id="useAdf" checked>
+                        <span>Use ADF (Feeder)</span>
+                    </label>
+                    <label class="checkbox-label" style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                        <input type="checkbox" id="duplex">
+                        <span>Duplex (2-sided)</span>
+                    </label>
+                    <label class="checkbox-label" style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                        <input type="checkbox" id="continuousScan">
+                        <span>Continuous Scan</span>
+                    </label>
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <label for="maxPages">Max Pages:</label>
+                        <select id="maxPages" style="padding: 4px 8px; border-radius: 4px; border: 1px solid #ddd;">
+                            <option value="-1" selected>Unlimited</option>
+                            <option value="1">1</option>
+                            <option value="5">5</option>
+                            <option value="10">10</option>
+                            <option value="20">20</option>
+                            <option value="50">50</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="tip-text" style="font-size: 12px; color: #888; margin-top: 8px;">
+                    💡 <strong>Continuous Scan</strong>: For flatbed scanners - prompts for next page after each scan.
+                </div>
+            </div>
+
             <div class="btn-group">
                 <button id="btnConnect" class="btn-primary">Connect</button>
                 <button id="btnScan" class="btn-primary" disabled>Scan</button>
@@ -584,20 +617,27 @@
         }
 
         // Start scan
-        function startScan() {
+        function startScan(isContinuation = false) {
             if (!selectedScanner || !token) return;
 
             const settings = {
                 dpi: parseInt(document.getElementById('dpiSelect').value),
                 pixelType: document.getElementById('colorSelect').value,
                 paperSize: document.getElementById('paperSelect').value,
-                useAdf: true,
-                maxPages: -1
+                useAdf: document.getElementById('useAdf').checked,
+                duplex: document.getElementById('duplex').checked,
+                continuousScan: document.getElementById('continuousScan').checked,
+                maxPages: isContinuation ? 1 : parseInt(document.getElementById('maxPages').value)  // Scan 1 page at a time in continuous mode
             };
 
-            log(`Starting scan with DPI=${settings.dpi}, Color=${settings.pixelType}`);
+            if (!isContinuation) {
+                log(`Starting scan: DPI=${settings.dpi}, Color=${settings.pixelType}, Paper=${settings.paperSize}, ADF=${settings.useAdf}, Duplex=${settings.duplex}, Continuous=${settings.continuousScan}, MaxPages=${settings.maxPages}`);
+                currentPage = 0;
+            } else {
+                log(`Continuing scan: Page ${currentPage + 1}...`, 'info');
+            }
+
             scanning = true;
-            currentPage = 0;
             btnScan.disabled = true;
             btnStop.disabled = false;
             progressBar.classList.add('active');
@@ -661,9 +701,9 @@
                         } else if (msg.status === 'completed') {
                             log(`Scan complete: ${msg.totalPages || currentPage} page(s)`, 'success');
                             scanning = false;
-                            btnScan.disabled = false;
                             btnStop.disabled = true;
                             progressBar.classList.remove('active');
+                            handleContinuousScanCheck();
                         } else if (msg.status === 'scanning') {
                             // Scan in progress, do nothing
                         }
@@ -684,9 +724,9 @@
                     case 'completed':
                         log(`Scan complete: ${msg.totalPages || currentPage} page(s)`, 'success');
                         scanning = false;
-                        btnScan.disabled = false;
                         btnStop.disabled = true;
                         progressBar.classList.remove('active');
+                        handleContinuousScanCheck();
                         break;
 
                     case 'scan_cancelled':
@@ -699,7 +739,18 @@
                         break;
 
                     case 'error':
-                        log(`Error: ${msg.message}`, 'error');
+                    case 'scan_error':
+                        const errorMsg = msg.message || msg.error || 'Unknown error';
+                        log(`Error: ${errorMsg}`, 'error');
+
+                        // Show alert for hardware errors (paper jam, etc.)
+                        if (errorMsg.toLowerCase().includes('jam') ||
+                            errorMsg.toLowerCase().includes('paper') ||
+                            errorMsg.toLowerCase().includes('feeder') ||
+                            errorMsg.toLowerCase().includes('offline')) {
+                            alert(`⚠️ Scanner Error\n\n${errorMsg}`);
+                        }
+
                         if (scanning) {
                             scanning = false;
                             btnScan.disabled = false;
@@ -774,6 +825,37 @@
 
             // Update gallery
             updateGallery();
+        }
+
+        // Handle continuous scan check
+        function handleContinuousScanCheck() {
+            const continuousScan = document.getElementById('continuousScan').checked;
+            const maxPagesValue = parseInt(document.getElementById('maxPages').value);
+
+            // Check if we've reached max pages
+            if (maxPagesValue > 0 && currentPage >= maxPagesValue) {
+                log('Max pages reached, stopping continuous scan', 'info');
+                btnScan.disabled = false;
+                return;
+            }
+
+            if (continuousScan) {
+                // Show confirmation dialog for next page
+                const continueScanning = confirm(`Page ${currentPage} scanned.\n\nPlace next document and click OK to continue scanning,\nor Cancel to finish.`);
+
+                if (continueScanning) {
+                    log('Continuing scan for next page...', 'info');
+                    // Small delay before starting next scan
+                    setTimeout(() => {
+                        startScan(true);  // Pass true to indicate continuation
+                    }, 500);
+                } else {
+                    log('Continuous scan stopped by user', 'info');
+                    btnScan.disabled = false;
+                }
+            } else {
+                btnScan.disabled = false;
+            }
         }
 
         // Update gallery display

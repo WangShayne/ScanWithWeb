@@ -53,10 +53,34 @@ public class TwainScannerProtocol : BaseScannerProtocol
 
             _twain.TransferError += (s, e) =>
             {
-                Logger.LogError("[TWAIN] Transfer error occurred");
+                // Get detailed error information
+                var errorMessage = "Scan transfer error";
+                var conditionCode = e.Exception?.Data["ConditionCode"];
+
+                if (conditionCode != null)
+                {
+                    var code = conditionCode.ToString();
+                    errorMessage = code switch
+                    {
+                        "PaperJam" => "Paper jam detected. Please clear the jam and try again.",
+                        "PaperDoubleFeed" => "Multiple pages fed. Please check the document feeder.",
+                        "CheckDeviceOnline" => "Scanner is offline. Please check the connection.",
+                        "NoMedia" => "No paper in the feeder. Please load paper and try again.",
+                        "FeederEmpty" => "Document feeder is empty.",
+                        "OperationError" => "Scanner operation error. Please try again.",
+                        _ => $"Scanner error: {code}"
+                    };
+                }
+                else if (e.Exception != null)
+                {
+                    errorMessage = $"Scan error: {e.Exception.Message}";
+                }
+
+                Logger.LogError("[TWAIN] Transfer error: {Error}", errorMessage);
+
                 if (_currentRequestId != null)
                 {
-                    RaiseScanError(_currentRequestId, "Transfer error occurred");
+                    RaiseScanError(_currentRequestId, errorMessage);
                 }
             };
 
@@ -326,10 +350,29 @@ public class TwainScannerProtocol : BaseScannerProtocol
             // Set paper size
             if (!string.IsNullOrEmpty(settings.PaperSize) && src.Capabilities.ICapSupportedSizes.IsSupported)
             {
+                // Get supported sizes for debugging
+                var supportedSizes = src.Capabilities.ICapSupportedSizes.GetValues().ToList();
+                Logger.LogDebug("[TWAIN] Requested paper size: {RequestedSize}, Supported sizes: {Supported}",
+                    settings.PaperSize, string.Join(", ", supportedSizes));
+
                 if (Enum.TryParse<SupportedSize>(settings.PaperSize, true, out var paperSize))
                 {
-                    src.Capabilities.ICapSupportedSizes.SetValue(paperSize);
-                    Logger.LogDebug("[TWAIN] Paper size set to {Size}", paperSize);
+                    // Check if this size is actually supported by the scanner
+                    if (supportedSizes.Contains(paperSize))
+                    {
+                        var result = src.Capabilities.ICapSupportedSizes.SetValue(paperSize);
+                        Logger.LogInformation("[TWAIN] Paper size set to {Size}, Result: {Result}", paperSize, result);
+                    }
+                    else
+                    {
+                        Logger.LogWarning("[TWAIN] Paper size {Size} parsed but not supported by scanner. Supported: {Supported}",
+                            paperSize, string.Join(", ", supportedSizes));
+                    }
+                }
+                else
+                {
+                    Logger.LogWarning("[TWAIN] Failed to parse paper size: {Size}. Valid enum values: {Values}",
+                        settings.PaperSize, string.Join(", ", Enum.GetNames<SupportedSize>().Take(20)));
                 }
             }
 
@@ -478,6 +521,13 @@ public class TwainScannerProtocol : BaseScannerProtocol
 
     private void CompleteScan()
     {
+        Logger.LogInformation("[TWAIN] Scan completed - Total pages scanned: {PageCount}", _currentPageNumber);
+
+        if (_currentPageNumber == 0)
+        {
+            Logger.LogWarning("[TWAIN] No pages were scanned. This may indicate a paper size mismatch or empty feeder.");
+        }
+
         if (_currentRequestId != null)
         {
             RaiseScanCompleted(_currentRequestId, _currentPageNumber);
