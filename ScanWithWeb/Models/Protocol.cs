@@ -225,6 +225,7 @@ public class ErrorResponse : ScanResponse
     public ErrorResponse()
     {
         Status = "error";
+        Action = "error";
     }
 }
 

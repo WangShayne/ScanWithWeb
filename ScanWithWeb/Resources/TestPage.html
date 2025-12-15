@@ -749,6 +749,10 @@
                             log(`Scanner selected: ${selectedScanner}`, 'success');
                             updateStatus(scannerStatus, scannerText, true, `Scanner: ${selectedScanner}`);
                             btnScan.disabled = false;
+                        } else {
+                            log(`Scanner selection failed: ${msg.message || msg.status || 'Unknown error'}`, 'error');
+                            updateStatus(scannerStatus, scannerText, false, 'Scanner: Selection failed');
+                            btnScan.disabled = true;
                         }
                         break;
 
@@ -803,7 +807,15 @@
                     case 'error':
                     case 'scan_error':
                         const errorMsg = msg.message || msg.error || 'Unknown error';
-                        log(`Error: ${errorMsg}`, 'error');
+                        const errorCode = msg.errorCode || '';
+                        log(`Error: ${errorMsg} (${errorCode})`, 'error');
+
+                        // Handle scanner-related errors
+                        if (errorCode === 'SCANNER_NOT_FOUND' || errorMsg.toLowerCase().includes('scanner')) {
+                            updateStatus(scannerStatus, scannerText, false, 'Scanner: Error');
+                            btnScan.disabled = true;
+                            selectedScanner = null;
+                        }
 
                         // Show alert for hardware errors (paper jam, etc.)
                         if (errorMsg.toLowerCase().includes('jam') ||

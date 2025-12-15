@@ -84,7 +84,7 @@ public class FileLoggerProvider : ILoggerProvider
         }
 
         var header = $"{Environment.NewLine}========== ScanWithWeb Started at {DateTime.Now:yyyy-MM-dd HH:mm:ss} =========={Environment.NewLine}";
-        header += $"Version: 3.0.3 ({(Environment.Is64BitProcess ? "64-bit" : "32-bit")}){Environment.NewLine}";
+        header += $"Version: 3.0.4 ({(Environment.Is64BitProcess ? "64-bit" : "32-bit")}){Environment.NewLine}";
         header += $"OS: {Environment.OSVersion}{Environment.NewLine}";
         header += $"Working Directory: {Environment.CurrentDirectory}{Environment.NewLine}";
         header += $"========================================{Environment.NewLine}";
