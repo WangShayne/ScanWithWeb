@@ -39,8 +39,17 @@ public abstract class BaseScannerProtocol : IScannerProtocol
     public virtual void ApplySettings(ScanSettings settings)
     {
         CurrentSettings = settings;
-        Logger.LogDebug("[{Protocol}] Settings applied: DPI={Dpi}, PixelType={PixelType}",
-            ProtocolName, settings.Dpi, settings.PixelType);
+        Logger.LogDebug(
+            "[{Protocol}] Settings applied: DPI={Dpi}, PixelType={PixelType}, PaperSize={PaperSize}, Duplex={Duplex}, UseAdf={UseAdf}, MaxPages={MaxPages}, ContinuousScan={ContinuousScan}, ShowUI={ShowUI}",
+            ProtocolName,
+            settings.Dpi,
+            settings.PixelType,
+            settings.PaperSize,
+            settings.Duplex,
+            settings.UseAdf,
+            settings.MaxPages,
+            settings.ContinuousScan,
+            settings.ShowUI);
     }
 
     /// <summary>

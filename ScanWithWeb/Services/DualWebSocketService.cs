@@ -26,6 +26,9 @@ public class DualWebSocketService : IDisposable
     private readonly int _wsPort;
     private X509Certificate2? _certificate;
 
+    private readonly object _scanHandlersLock = new();
+    private readonly Dictionary<string, (EventHandler<ProtocolImageScannedEventArgs> Image, EventHandler<ProtocolScanCompletedEventArgs> Completed, EventHandler<ProtocolScanErrorEventArgs> Error)> _scanHandlersByRequestId = new();
+
     public bool IsWssRunning { get; private set; }
     public bool IsWsRunning { get; private set; }
 
@@ -419,8 +422,23 @@ public class DualWebSocketService : IDisposable
         var session = _sessionManager.GetSessionBySocket(socket);
         if (session == null) return;
 
+        _logger.LogInformation(
+            "Scan requested: RequestId={RequestId}, ClientId={ClientId}, SocketId={SocketId}, IP={IP}, SelectedScanner={Scanner}, Settings={Settings}",
+            request.RequestId,
+            session.ClientId,
+            socket.ConnectionInfo.Id,
+            socket.ConnectionInfo.ClientIpAddress,
+            session.SelectedScanner ?? "(none)",
+            request.Settings == null
+                ? "(none)"
+                : $"dpi={request.Settings.Dpi}, pixelType={request.Settings.PixelType}, paperSize={request.Settings.PaperSize}, useAdf={request.Settings.UseAdf}, duplex={request.Settings.Duplex}, showUI={request.Settings.ShowUI}, continuousScan={request.Settings.ContinuousScan}, maxPages={request.Settings.MaxPages}");
+
         if (session.IsScanning)
         {
+            _logger.LogWarning(
+                "Rejecting scan: already in progress for ClientId={ClientId}, CurrentRequestId={CurrentRequestId}",
+                session.ClientId,
+                session.CurrentScanRequestId ?? "(none)");
             await SendError(socket, request.RequestId, ErrorCodes.ScannerBusy, "Scan already in progress");
             return;
         }
@@ -433,6 +451,7 @@ public class DualWebSocketService : IDisposable
             // Apply scan settings if provided
             if (request.Settings != null)
             {
+                _logger.LogDebug("Applying scan settings for RequestId={RequestId}", request.RequestId);
                 if (_scannerManager != null)
                 {
                     _scannerManager.ApplySettings(request.Settings);
@@ -460,8 +479,19 @@ public class DualWebSocketService : IDisposable
 
             if (!success)
             {
-                await SendError(socket, request.RequestId, ErrorCodes.ScanFailed, "Failed to start scan");
+                var hint = request.Settings?.ShowUI == true
+                    ? string.Empty
+                    : " If you're using a TWAIN scanner that requires driver UI, try settings.showUI=true.";
+                await SendError(socket, request.RequestId, ErrorCodes.ScanFailed, $"Failed to start scan.{hint}");
                 session.IsScanning = false;
+                if (_scannerManager != null)
+                {
+                    UnwireScannerManagerEvents(request.RequestId);
+                }
+            }
+            else
+            {
+                _logger.LogInformation("Scan started: RequestId={RequestId}, ClientId={ClientId}", request.RequestId, session.ClientId);
             }
         }
         catch (Exception ex)
@@ -469,12 +499,24 @@ public class DualWebSocketService : IDisposable
             _logger.LogError(ex, "Scan failed");
             await SendError(socket, request.RequestId, ErrorCodes.ScanFailed, ex.Message);
             session.IsScanning = false;
+            if (_scannerManager != null)
+            {
+                UnwireScannerManagerEvents(request.RequestId);
+            }
         }
     }
 
     private void WireUpScannerManagerEvents(ClientSession session, string requestId)
     {
         if (_scannerManager == null) return;
+
+        lock (_scanHandlersLock)
+        {
+            if (_scanHandlersByRequestId.ContainsKey(requestId))
+            {
+                return;
+            }
+        }
 
         // Handle image scanned event
         void onImageScanned(object? sender, Models.ProtocolImageScannedEventArgs e)
@@ -497,10 +539,7 @@ public class DualWebSocketService : IDisposable
                 await SendScanComplete(session, e.RequestId, e.TotalPages);
             });
 
-            // Unsubscribe events
-            _scannerManager.ImageScanned -= onImageScanned;
-            _scannerManager.ScanCompleted -= onScanCompleted;
-            _scannerManager.ScanError -= onScanError;
+            UnwireScannerManagerEvents(requestId);
         }
 
         // Handle scan error event
@@ -517,15 +556,36 @@ public class DualWebSocketService : IDisposable
                 session.IsScanning = false;
             });
 
-            // Unsubscribe events
-            _scannerManager.ImageScanned -= onImageScanned;
-            _scannerManager.ScanCompleted -= onScanCompleted;
-            _scannerManager.ScanError -= onScanError;
+            UnwireScannerManagerEvents(requestId);
+        }
+
+        lock (_scanHandlersLock)
+        {
+            _scanHandlersByRequestId[requestId] = (onImageScanned, onScanCompleted, onScanError);
         }
 
         _scannerManager.ImageScanned += onImageScanned;
         _scannerManager.ScanCompleted += onScanCompleted;
         _scannerManager.ScanError += onScanError;
+    }
+
+    private void UnwireScannerManagerEvents(string requestId)
+    {
+        if (_scannerManager == null) return;
+
+        (EventHandler<ProtocolImageScannedEventArgs> Image, EventHandler<ProtocolScanCompletedEventArgs> Completed, EventHandler<ProtocolScanErrorEventArgs> Error) handlers;
+        lock (_scanHandlersLock)
+        {
+            if (!_scanHandlersByRequestId.TryGetValue(requestId, out handlers))
+            {
+                return;
+            }
+            _scanHandlersByRequestId.Remove(requestId);
+        }
+
+        _scannerManager.ImageScanned -= handlers.Image;
+        _scannerManager.ScanCompleted -= handlers.Completed;
+        _scannerManager.ScanError -= handlers.Error;
     }
 
     private async Task HandleStopScan(IWebSocketConnection socket, ScanRequest request)
@@ -535,9 +595,22 @@ public class DualWebSocketService : IDisposable
         var session = _sessionManager.GetSessionBySocket(socket);
         if (session == null) return;
 
+        _logger.LogInformation(
+            "Stop requested: RequestId={RequestId}, ClientId={ClientId}, CurrentScanRequestId={CurrentRequestId}",
+            request.RequestId,
+            session.ClientId,
+            session.CurrentScanRequestId ?? "(none)");
+
         // Use ScannerManager if available (multi-protocol support)
         if (_scannerManager != null)
         {
+            // Detach scan-specific handlers to avoid leaking and to prevent late "error/complete" messages
+            // after we've acknowledged cancellation.
+            if (!string.IsNullOrEmpty(session.CurrentScanRequestId))
+            {
+                UnwireScannerManagerEvents(session.CurrentScanRequestId);
+            }
+
             _scannerManager.StopScan();
         }
         else
@@ -546,6 +619,7 @@ public class DualWebSocketService : IDisposable
         }
 
         session.IsScanning = false;
+        session.CurrentScanRequestId = null;
 
         var response = new ScanResponse
         {

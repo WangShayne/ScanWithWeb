@@ -212,6 +212,25 @@ public class ScannerManager : IDisposable
     /// </summary>
     public void ApplySettings(ScanSettings settings)
     {
+        if (_activeProtocol == null)
+        {
+            _logger.LogWarning("ApplySettings called but no scanner/protocol is active");
+            return;
+        }
+
+        _logger.LogDebug(
+            "Applying settings via {Protocol} to {ScannerId}: dpi={Dpi}, pixelType={PixelType}, paperSize={PaperSize}, useAdf={UseAdf}, duplex={Duplex}, showUI={ShowUI}, continuousScan={ContinuousScan}, maxPages={MaxPages}",
+            _activeProtocol.ProtocolName,
+            _activeScannerId ?? "(none)",
+            settings.Dpi,
+            settings.PixelType,
+            settings.PaperSize,
+            settings.UseAdf,
+            settings.Duplex,
+            settings.ShowUI,
+            settings.ContinuousScan,
+            settings.MaxPages);
+
         _activeProtocol?.ApplySettings(settings);
     }
 
@@ -228,8 +247,11 @@ public class ScannerManager : IDisposable
 
         _currentRequestId = requestId;
 
-        _logger.LogInformation("Starting scan via {Protocol}, RequestId={RequestId}",
-            _activeProtocol.ProtocolName, requestId);
+        _logger.LogInformation(
+            "Starting scan via {Protocol}, Scanner={Scanner}, RequestId={RequestId}",
+            _activeProtocol.ProtocolName,
+            _activeScannerId ?? "(none)",
+            requestId);
 
         return await _activeProtocol.StartScanAsync(requestId);
     }

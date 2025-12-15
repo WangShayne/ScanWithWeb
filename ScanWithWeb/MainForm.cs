@@ -148,33 +148,55 @@ public partial class MainForm : Form
 
         _versionLabel = new Label
         {
-            Text = $"v3.0.4 ({bits})",
+            Text = $"v3.0.5 ({bits})",
             Font = new Font("Segoe UI", 10F),
             ForeColor = Color.FromArgb(108, 117, 125),
             AutoSize = true,
             Location = new Point(2, 45)
         };
 
-        // Test Page button - positioned at right side of header
-        var btnTestPage = new Button
+        // Actions (right aligned)
+        var actionsPanel = new FlowLayoutPanel
         {
-            Text = "Test Page",
-            Font = new Font("Segoe UI", 9F),
-            Size = new Size(90, 32),
-            Location = new Point(460, 20),
-            FlatStyle = FlatStyle.Flat,
-            BackColor = _primaryColor,
-            ForeColor = Color.White,
-            Cursor = Cursors.Hand,
-            TextAlign = ContentAlignment.MiddleCenter,
-            Padding = new Padding(0)
+            Dock = DockStyle.Right,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Padding = new Padding(0, 18, 0, 0),
+            BackColor = _bgColor
         };
-        btnTestPage.FlatAppearance.BorderSize = 0;
+
+        Button CreateHeaderButton(string text, Color backColor)
+        {
+            var btn = new Button
+            {
+                Text = text,
+                Font = new Font("Segoe UI", 9F),
+                Size = new Size(100, 32),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = backColor,
+                ForeColor = Color.White,
+                Cursor = Cursors.Hand,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Margin = new Padding(8, 0, 0, 0),
+                Padding = new Padding(0)
+            };
+            btn.FlatAppearance.BorderSize = 0;
+            return btn;
+        }
+
+        var btnTestPage = CreateHeaderButton("Test Page", _primaryColor);
         btnTestPage.Click += (s, e) => OpenTestPage();
+
+        var btnPrinter = CreateHeaderButton("Printer", _warningColor);
+        btnPrinter.Click += (s, e) => OpenPrinterSettings();
 
         _headerPanel.Controls.Add(_titleLabel);
         _headerPanel.Controls.Add(_versionLabel);
-        _headerPanel.Controls.Add(btnTestPage);
+        actionsPanel.Controls.Add(btnTestPage);
+        actionsPanel.Controls.Add(btnPrinter);
+        _headerPanel.Controls.Add(actionsPanel);
     }
 
     private void CreateStatusPanel()
@@ -370,6 +392,7 @@ public partial class MainForm : Form
         _trayMenu = new ContextMenuStrip();
         _trayMenu.Items.Add("Open Dashboard", null, (s, e) => ShowWindow());
         _trayMenu.Items.Add("Test Page", null, (s, e) => OpenTestPage());
+        _trayMenu.Items.Add("Printer Settings", null, (s, e) => OpenPrinterSettings());
         _trayMenu.Items.Add("-");
         _trayMenu.Items.Add("Exit", null, (s, e) => ExitApplication());
 
@@ -738,7 +761,10 @@ public partial class MainForm : Form
 
     private void OnScanError(object? sender, ScanErrorEventArgs e)
     {
-        _logger.LogError("Scan error: {Error}", e.ErrorMessage);
+        _logger.LogError("Scan error: RequestId={RequestId}, ClientId={ClientId}, Message={Error}",
+            e.RequestId,
+            e.Session?.ClientId ?? "(unknown)",
+            e.ErrorMessage);
 
         this.BeginInvoke(() =>
         {
@@ -813,6 +839,28 @@ public partial class MainForm : Form
             MessageBox.Show(
                 $"Failed to open test page:\n{ex.Message}",
                 "Error",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
+    }
+
+    private void OpenPrinterSettings()
+    {
+        try
+        {
+            using var form = new PrinterSettingsForm(_logger);
+            var result = form.ShowDialog(this);
+            if (result == DialogResult.OK)
+            {
+                ShowNotification("Printer Settings", "Printer preference saved");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to open printer settings");
+            MessageBox.Show(
+                $"Failed to open printer settings:\n{ex.Message}",
+                "Printer Settings",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
         }

@@ -457,6 +457,10 @@
                         <span>Duplex (2-sided)</span>
                     </label>
                     <label class="checkbox-label" style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                        <input type="checkbox" id="showUI">
+                        <span>Show Scanner UI (TWAIN)</span>
+                    </label>
+                    <label class="checkbox-label" style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
                         <input type="checkbox" id="continuousScan">
                         <span>Continuous Scan (Auto)</span>
                     </label>
@@ -674,12 +678,13 @@
                 paperSize: document.getElementById('paperSelect').value,
                 useAdf: document.getElementById('useAdf').checked,
                 duplex: document.getElementById('duplex').checked,
+                showUI: document.getElementById('showUI').checked,
                 continuousScan: document.getElementById('continuousScan').checked,
                 maxPages: isContinuation ? 1 : parseInt(document.getElementById('maxPages').value)  // Scan 1 page at a time in continuous mode
             };
 
             if (!isContinuation) {
-                log(`Starting scan: DPI=${settings.dpi}, Color=${settings.pixelType}, Paper=${settings.paperSize}, ADF=${settings.useAdf}, Duplex=${settings.duplex}, Continuous=${settings.continuousScan}, MaxPages=${settings.maxPages}`);
+                log(`Starting scan: DPI=${settings.dpi}, Color=${settings.pixelType}, Paper=${settings.paperSize}, ADF=${settings.useAdf}, Duplex=${settings.duplex}, ShowUI=${settings.showUI}, Continuous=${settings.continuousScan}, MaxPages=${settings.maxPages}`);
                 currentPage = 0;
             } else {
                 log(`Continuing scan: Page ${currentPage + 1}...`, 'info');

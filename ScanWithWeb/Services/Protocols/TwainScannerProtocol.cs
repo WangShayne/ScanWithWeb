@@ -18,6 +18,8 @@ public class TwainScannerProtocol : BaseScannerProtocol
     private bool _stopScan;
     private int _currentPageNumber;
     private string? _currentRequestId;
+    private readonly object _scanStateLock = new();
+    private bool _scanTerminated;
 
     // Cache DataSource objects by ID for later selection
     // This helps handle scanners with empty names that get populated later
@@ -39,7 +41,7 @@ public class TwainScannerProtocol : BaseScannerProtocol
             // Create TWIdentity manually to avoid issues with single-file publish
             var appId = TWIdentity.Create(
                 DataGroups.Image,
-                new Version(3, 0, 4),
+                new Version(3, 0, 5),
                 "ScanWithWeb Team",
                 "ScanWithWeb",
                 "ScanWithWeb Service",
@@ -57,35 +59,7 @@ public class TwainScannerProtocol : BaseScannerProtocol
 
             _twain.TransferError += (s, e) =>
             {
-                // Get detailed error information
-                var errorMessage = "Scan transfer error";
-                var conditionCode = e.Exception?.Data["ConditionCode"];
-
-                if (conditionCode != null)
-                {
-                    var code = conditionCode.ToString();
-                    errorMessage = code switch
-                    {
-                        "PaperJam" => "Paper jam detected. Please clear the jam and try again.",
-                        "PaperDoubleFeed" => "Multiple pages fed. Please check the document feeder.",
-                        "CheckDeviceOnline" => "Scanner is offline. Please check the connection.",
-                        "NoMedia" => "No paper in the feeder. Please load paper and try again.",
-                        "FeederEmpty" => "Document feeder is empty.",
-                        "OperationError" => "Scanner operation error. Please try again.",
-                        _ => $"Scanner error: {code}"
-                    };
-                }
-                else if (e.Exception != null)
-                {
-                    errorMessage = $"Scan error: {e.Exception.Message}";
-                }
-
-                Logger.LogError("[TWAIN] Transfer error: {Error}", errorMessage);
-
-                if (_currentRequestId != null)
-                {
-                    RaiseScanError(_currentRequestId, errorMessage);
-                }
+                HandleTransferError(e.Exception);
             };
 
             _twain.DataTransferred += OnDataTransferred;
@@ -93,7 +67,7 @@ public class TwainScannerProtocol : BaseScannerProtocol
             _twain.SourceDisabled += (s, e) =>
             {
                 Logger.LogInformation("[TWAIN] Scan source disabled, scan complete");
-                CompleteScan();
+                HandleSourceDisabled();
             };
 
             _twain.TransferReady += (s, e) =>
@@ -140,6 +114,9 @@ public class TwainScannerProtocol : BaseScannerProtocol
         {
             if (e.NativeData != IntPtr.Zero)
             {
+                Logger.LogDebug("[TWAIN] DataTransferred via NativeData (RequestId={RequestId}, Page={Page})",
+                    _currentRequestId ?? "(none)",
+                    _currentPageNumber);
                 var stream = e.GetNativeImageStream();
                 if (stream != null)
                 {
@@ -178,6 +155,10 @@ public class TwainScannerProtocol : BaseScannerProtocol
             }
             else if (!string.IsNullOrEmpty(e.FileDataPath))
             {
+                Logger.LogDebug("[TWAIN] DataTransferred via FileDataPath={Path} (RequestId={RequestId}, Page={Page})",
+                    e.FileDataPath,
+                    _currentRequestId ?? "(none)",
+                    _currentPageNumber);
                 var rawImageData = File.ReadAllBytes(e.FileDataPath);
                 using var img = Image.FromFile(e.FileDataPath);
                 var width = img.Width;
@@ -391,18 +372,32 @@ public class TwainScannerProtocol : BaseScannerProtocol
         base.ApplySettings(settings);
 
         if (_twain?.CurrentSource == null)
+        {
+            Logger.LogWarning("[TWAIN] ApplySettings called but no current source is selected");
             return;
+        }
 
         var src = _twain.CurrentSource;
 
         try
         {
+            Logger.LogInformation(
+                "[TWAIN] Applying settings: dpi={Dpi}, pixelType={PixelType}, paperSize={PaperSize}, useAdf={UseAdf}, duplex={Duplex}, showUI={ShowUI}, continuousScan={ContinuousScan}, maxPages={MaxPages}",
+                settings.Dpi,
+                settings.PixelType,
+                settings.PaperSize,
+                settings.UseAdf,
+                settings.Duplex,
+                settings.ShowUI,
+                settings.ContinuousScan,
+                settings.MaxPages);
+
             // Set DPI
             if (settings.Dpi > 0 && src.Capabilities.ICapXResolution.IsSupported)
             {
-                src.Capabilities.ICapXResolution.SetValue(new TWFix32 { Whole = (short)settings.Dpi });
-                src.Capabilities.ICapYResolution.SetValue(new TWFix32 { Whole = (short)settings.Dpi });
-                Logger.LogDebug("[TWAIN] DPI set to {Dpi}", settings.Dpi);
+                var xrc = src.Capabilities.ICapXResolution.SetValue(new TWFix32 { Whole = (short)settings.Dpi });
+                var yrc = src.Capabilities.ICapYResolution.SetValue(new TWFix32 { Whole = (short)settings.Dpi });
+                Logger.LogInformation("[TWAIN] DPI set to {Dpi}, X={Xrc}, Y={Yrc}", settings.Dpi, xrc, yrc);
             }
 
             // Set pixel type (color mode)
@@ -410,8 +405,12 @@ public class TwainScannerProtocol : BaseScannerProtocol
             {
                 if (Enum.TryParse<PixelType>(settings.PixelType, true, out var pixelType))
                 {
-                    src.Capabilities.ICapPixelType.SetValue(pixelType);
-                    Logger.LogDebug("[TWAIN] Pixel type set to {Type}", pixelType);
+                    var rc = src.Capabilities.ICapPixelType.SetValue(pixelType);
+                    Logger.LogInformation("[TWAIN] Pixel type set to {Type}, Result: {Result}", pixelType, rc);
+                }
+                else
+                {
+                    Logger.LogWarning("[TWAIN] Failed to parse pixelType: {PixelType}", settings.PixelType);
                 }
             }
 
@@ -447,27 +446,66 @@ public class TwainScannerProtocol : BaseScannerProtocol
             // Set duplex
             if (src.Capabilities.CapDuplexEnabled.IsSupported)
             {
-                src.Capabilities.CapDuplexEnabled.SetValue(settings.Duplex ? BoolType.True : BoolType.False);
-                Logger.LogDebug("[TWAIN] Duplex set to {Duplex}", settings.Duplex);
+                var rc = src.Capabilities.CapDuplexEnabled.SetValue(settings.Duplex ? BoolType.True : BoolType.False);
+                Logger.LogInformation("[TWAIN] Duplex enabled set to {Duplex}, Result: {Result}", settings.Duplex, rc);
+            }
+
+            // Prefer explicit duplex mode selection when available.
+            // Some scanners/drivers default to TwoPass duplex, which yields output order:
+            // 1F 2F 3F 1B 2B 3B. Selecting OnePass typically yields interleaved sides.
+            if (src.Capabilities.CapDuplex.IsSupported)
+            {
+                var supported = src.Capabilities.CapDuplex.GetValues().ToList();
+                var desired = settings.Duplex ? Duplex.OnePass : Duplex.None;
+
+                Logger.LogDebug("[TWAIN] Duplex mode requested: {Desired}, Supported: {Supported}",
+                    desired, string.Join(", ", supported));
+
+                if (supported.Contains(desired))
+                {
+                    if (src.Capabilities.CapDuplex is ICapWrapper<Duplex> writableDuplex && !src.Capabilities.CapDuplex.IsReadOnly)
+                    {
+                        var rc = writableDuplex.SetValue(desired);
+                        Logger.LogInformation("[TWAIN] Duplex mode set to {Mode}, Result: {Result}", desired, rc);
+                    }
+                    else
+                    {
+                        Logger.LogWarning("[TWAIN] Duplex capability is read-only; cannot set duplex mode to {Mode}", desired);
+                    }
+                }
+                else if (settings.Duplex && supported.Contains(Duplex.TwoPass))
+                {
+                    Logger.LogWarning("[TWAIN] OnePass duplex not supported; falling back to TwoPass duplex");
+                    if (src.Capabilities.CapDuplex is ICapWrapper<Duplex> writableDuplex && !src.Capabilities.CapDuplex.IsReadOnly)
+                    {
+                        var rc = writableDuplex.SetValue(Duplex.TwoPass);
+                        Logger.LogInformation("[TWAIN] Duplex mode set to {Mode}, Result: {Result}", Duplex.TwoPass, rc);
+                    }
+                    else
+                    {
+                        Logger.LogWarning("[TWAIN] Duplex capability is read-only; cannot set duplex mode to {Mode}", Duplex.TwoPass);
+                    }
+                }
             }
 
             // Enable/disable ADF
             if (src.Capabilities.CapFeederEnabled.IsSupported)
             {
-                src.Capabilities.CapFeederEnabled.SetValue(settings.UseAdf ? BoolType.True : BoolType.False);
-                Logger.LogDebug("[TWAIN] ADF enabled: {UseAdf}", settings.UseAdf);
+                var rc = src.Capabilities.CapFeederEnabled.SetValue(settings.UseAdf ? BoolType.True : BoolType.False);
+                Logger.LogInformation("[TWAIN] ADF enabled set to {UseAdf}, Result: {Result}", settings.UseAdf, rc);
 
                 if (settings.UseAdf && src.Capabilities.CapAutoFeed.IsSupported)
                 {
-                    src.Capabilities.CapAutoFeed.SetValue(BoolType.True);
+                    var autoRc = src.Capabilities.CapAutoFeed.SetValue(BoolType.True);
+                    Logger.LogInformation("[TWAIN] AutoFeed enabled, Result: {Result}", autoRc);
                 }
             }
 
             // Set maximum pages
             if (src.Capabilities.CapXferCount.IsSupported)
             {
-                src.Capabilities.CapXferCount.SetValue(settings.MaxPages);
-                Logger.LogDebug("[TWAIN] Max pages set to {MaxPages}", settings.MaxPages);
+                var rc = src.Capabilities.CapXferCount.SetValue(settings.MaxPages);
+                Logger.LogInformation("[TWAIN] Max pages set to {MaxPages}, Result: {Result}", settings.MaxPages, rc);
             }
         }
         catch (Exception ex)
@@ -496,10 +534,23 @@ public class TwainScannerProtocol : BaseScannerProtocol
         _currentPageNumber = 0;
         _stopScan = false;
         IsScanning = true;
+        lock (_scanStateLock)
+        {
+            _scanTerminated = false;
+        }
 
         try
         {
             var src = _twain.CurrentSource;
+            var showUI = CurrentSettings?.ShowUI == true;
+
+            Logger.LogInformation(
+                "[TWAIN] Starting scan: RequestId={RequestId}, Scanner={Scanner}, ShowUI={ShowUI}, TwainState={State}, WindowHandle={Handle}",
+                requestId,
+                src.Name,
+                showUI,
+                _twain.State,
+                _windowHandle);
 
             // Check if scanner supports UI-less operation
             bool supportsNoUI = false;
@@ -519,10 +570,11 @@ public class TwainScannerProtocol : BaseScannerProtocol
 
             ReturnCode result;
 
-            // Try NoUI mode first if supported
-            if (supportsNoUI)
+            // When ShowUI is false (service/headless usage), do not pop scanner UI.
+            // If the scanner/driver cannot scan without UI, the caller must request UI explicitly.
+            if (!showUI)
             {
-                Logger.LogDebug("[TWAIN] Trying NoUI mode first");
+                Logger.LogDebug("[TWAIN] Starting scan with ShowUI=false (headless mode). SupportsNoUI={SupportsNoUI}", supportsNoUI);
                 try
                 {
                     result = src.Enable(SourceEnableMode.NoUI, false, _windowHandle);
@@ -531,10 +583,16 @@ public class TwainScannerProtocol : BaseScannerProtocol
                         Logger.LogInformation("[TWAIN] NoUI mode scan started successfully");
                         return true;
                     }
+
+                    Logger.LogWarning("[TWAIN] NoUI mode returned {Result}. To allow scanner UI, set settings.showUI=true.", result);
+                    IsScanning = false;
+                    return false;
                 }
-                catch (Exception noUIEx)
+                catch (Exception noUiEx)
                 {
-                    Logger.LogWarning(noUIEx, "[TWAIN] NoUI mode failed, falling back to ShowUI mode");
+                    Logger.LogWarning(noUiEx, "[TWAIN] NoUI mode threw an exception. To allow scanner UI, set settings.showUI=true.");
+                    IsScanning = false;
+                    return false;
                 }
             }
 
@@ -584,7 +642,23 @@ public class TwainScannerProtocol : BaseScannerProtocol
     public override void StopScan()
     {
         _stopScan = true;
-        Logger.LogInformation("[TWAIN] Scan stop requested");
+        Logger.LogInformation(
+            "[TWAIN] Scan stop requested (RequestId={RequestId}, PagesSoFar={Pages}, TwainState={State})",
+            _currentRequestId ?? "(none)",
+            _currentPageNumber,
+            _twain?.State ?? 0);
+
+        // Ensure we don't emit a "completed" event after a stop.
+        // This also allows subsequent scans without needing to restart the service.
+        lock (_scanStateLock)
+        {
+            _scanTerminated = true;
+        }
+
+        _currentRequestId = null;
+        IsScanning = false;
+
+        TryDisableAndStepDown("StopScan");
     }
 
     private void CompleteScan()
@@ -604,6 +678,142 @@ public class TwainScannerProtocol : BaseScannerProtocol
         IsScanning = false;
         _currentRequestId = null;
         _currentPageNumber = 0;
+    }
+
+    private void HandleSourceDisabled()
+    {
+        // SourceDisabled is raised for normal completion, but it may also fire after errors or manual stop.
+        // Ensure we only report one terminal outcome for a given scan request.
+        bool terminated;
+        lock (_scanStateLock)
+        {
+            terminated = _scanTerminated;
+        }
+
+        Logger.LogDebug(
+            "[TWAIN] SourceDisabled received (RequestId={RequestId}, Pages={Pages}, Terminated={Terminated}, TwainState={State})",
+            _currentRequestId ?? "(none)",
+            _currentPageNumber,
+            terminated,
+            _twain?.State ?? 0);
+
+        if (terminated)
+        {
+            IsScanning = false;
+            _currentRequestId = null;
+            _currentPageNumber = 0;
+            return;
+        }
+
+        CompleteScan();
+    }
+
+    private void HandleTransferError(Exception? ex)
+    {
+        var (conditionCode, errorMessage) = GetTwainErrorInfo(ex);
+
+        // TransferError can fire repeatedly (e.g., paper jam loop / feeder empty polling).
+        // Treat some conditions as a normal end-of-job once at least one page was scanned.
+        var code = conditionCode ?? "Unknown";
+        var isFeederEmpty = string.Equals(code, "FeederEmpty", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(code, "NoMedia", StringComparison.OrdinalIgnoreCase);
+
+        bool firstTerminal;
+        lock (_scanStateLock)
+        {
+            firstTerminal = !_scanTerminated;
+            _scanTerminated = true;
+        }
+
+        if (!firstTerminal)
+        {
+            Logger.LogDebug("[TWAIN] Suppressing repeated transfer error: {Code} - {Message}", code, errorMessage);
+            return;
+        }
+
+        Logger.LogWarning(
+            "[TWAIN] TransferError received (RequestId={RequestId}, Code={Code}, PagesSoFar={Pages}, TwainState={State}, Exception={ExType})",
+            _currentRequestId ?? "(none)",
+            code,
+            _currentPageNumber,
+            _twain?.State ?? 0,
+            ex?.GetType().FullName ?? "(none)");
+
+        // Stop the device from continuously raising the same condition.
+        TryDisableAndStepDown($"TransferError:{code}");
+
+        if (isFeederEmpty && _currentPageNumber > 0)
+        {
+            Logger.LogInformation("[TWAIN] Feeder empty after {Pages} page(s). Treating as scan completion.", _currentPageNumber);
+            CompleteScan();
+            return;
+        }
+
+        Logger.LogError("[TWAIN] Transfer error: {Code} - {Error}", code, errorMessage);
+
+        if (_currentRequestId != null)
+        {
+            RaiseScanError(_currentRequestId, errorMessage);
+        }
+
+        _currentRequestId = null;
+        IsScanning = false;
+    }
+
+    private static (string? ConditionCode, string ErrorMessage) GetTwainErrorInfo(Exception? ex)
+    {
+        var conditionCode = ex?.Data["ConditionCode"]?.ToString();
+
+        if (!string.IsNullOrWhiteSpace(conditionCode))
+        {
+            var message = conditionCode switch
+            {
+                "PaperJam" => "Paper jam detected. Please clear the jam and try again.",
+                "PaperDoubleFeed" => "Multiple pages fed. Please check the document feeder.",
+                "CheckDeviceOnline" => "Scanner is offline. Please check the connection.",
+                "NoMedia" => "No paper in the feeder. Please load paper and try again.",
+                "FeederEmpty" => "Document feeder is empty.",
+                "OperationError" => "Scanner operation error. Please try again.",
+                _ => $"Scanner error: {conditionCode}"
+            };
+            return (conditionCode, message);
+        }
+
+        if (ex != null && !string.IsNullOrWhiteSpace(ex.Message))
+        {
+            return (null, $"Scan error: {ex.Message}");
+        }
+
+        return (null, "Scan transfer error");
+    }
+
+    private void TryDisableAndStepDown(string reason)
+    {
+        try
+        {
+            if (_twain != null && _twain.State > 4)
+            {
+                Logger.LogDebug("[TWAIN] ForceStepDown to source-open state due to: {Reason} (State={State})", reason, _twain.State);
+                _twain.ForceStepDown(4);
+                Logger.LogDebug("[TWAIN] ForceStepDown(4) complete (State={State})", _twain.State);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "[TWAIN] ForceStepDown(4) failed (Reason={Reason})", reason);
+            try
+            {
+                if (_twain != null && _twain.State > 3)
+                {
+                    _twain.ForceStepDown(3);
+                    Logger.LogDebug("[TWAIN] ForceStepDown(3) complete (State={State})", _twain.State);
+                }
+            }
+            catch (Exception ex2)
+            {
+                Logger.LogDebug(ex2, "[TWAIN] ForceStepDown(3) failed (Reason={Reason})", reason);
+            }
+        }
     }
 
     public override void Shutdown()

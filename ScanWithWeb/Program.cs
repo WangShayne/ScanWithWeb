@@ -51,6 +51,9 @@ internal static class Program
             // Get logger for global exception handling
             _logger = serviceProvider.GetRequiredService<ILogger<MainForm>>();
             _logger.LogInformation("Application starting...");
+            _logger.LogInformation("Log file: {LogFilePath}", _logFilePath);
+            _logger.LogInformation("Runtime: {Framework}, {Bits}", System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
+                Environment.Is64BitProcess ? "64-bit" : "32-bit");
 
             // Run application
             var mainForm = serviceProvider.GetRequiredService<MainForm>();
