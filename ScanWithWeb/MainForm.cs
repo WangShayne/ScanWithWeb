@@ -148,7 +148,7 @@ public partial class MainForm : Form
 
         _versionLabel = new Label
         {
-            Text = $"v3.0.5 ({bits})",
+            Text = $"v3.0.6 ({bits})",
             Font = new Font("Segoe UI", 10F),
             ForeColor = Color.FromArgb(108, 117, 125),
             AutoSize = true,
@@ -189,12 +189,16 @@ public partial class MainForm : Form
         var btnTestPage = CreateHeaderButton("Test Page", _primaryColor);
         btnTestPage.Click += (s, e) => OpenTestPage();
 
+        var btnScanner = CreateHeaderButton("Scanner", _successColor);
+        btnScanner.Click += (s, e) => OpenScannerSettings();
+
         var btnPrinter = CreateHeaderButton("Printer", _warningColor);
         btnPrinter.Click += (s, e) => OpenPrinterSettings();
 
         _headerPanel.Controls.Add(_titleLabel);
         _headerPanel.Controls.Add(_versionLabel);
         actionsPanel.Controls.Add(btnTestPage);
+        actionsPanel.Controls.Add(btnScanner);
         actionsPanel.Controls.Add(btnPrinter);
         _headerPanel.Controls.Add(actionsPanel);
     }
@@ -392,6 +396,7 @@ public partial class MainForm : Form
         _trayMenu = new ContextMenuStrip();
         _trayMenu.Items.Add("Open Dashboard", null, (s, e) => ShowWindow());
         _trayMenu.Items.Add("Test Page", null, (s, e) => OpenTestPage());
+        _trayMenu.Items.Add("Scanner Settings", null, (s, e) => OpenScannerSettings());
         _trayMenu.Items.Add("Printer Settings", null, (s, e) => OpenPrinterSettings());
         _trayMenu.Items.Add("-");
         _trayMenu.Items.Add("Exit", null, (s, e) => ExitApplication());
@@ -861,6 +866,38 @@ public partial class MainForm : Form
             MessageBox.Show(
                 $"Failed to open printer settings:\n{ex.Message}",
                 "Printer Settings",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
+    }
+
+    private void OpenScannerSettings()
+    {
+        try
+        {
+            if (_scannerManager == null)
+            {
+                MessageBox.Show(
+                    "Scanner Manager is not available in this build.\n\nUse the Test Page to select scanners.",
+                    "Scanner Settings",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return;
+            }
+
+            using var form = new ScannerSettingsForm(_logger, _scannerManager);
+            var result = form.ShowDialog(this);
+            if (result == DialogResult.OK)
+            {
+                ShowNotification("Scanner Settings", "Scanner preference saved");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to open scanner settings");
+            MessageBox.Show(
+                $"Failed to open scanner settings:\n{ex.Message}",
+                "Scanner Settings",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
         }

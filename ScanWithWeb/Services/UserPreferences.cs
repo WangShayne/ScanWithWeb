@@ -6,6 +6,8 @@ namespace ScanWithWeb.Services;
 internal sealed class UserPreferences
 {
     public string? DefaultPrinter { get; set; }
+    public string? DefaultScannerId { get; set; }
+    public string? DefaultScannerProtocol { get; set; }
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -57,4 +59,3 @@ internal sealed class UserPreferences
         }
     }
 }
-

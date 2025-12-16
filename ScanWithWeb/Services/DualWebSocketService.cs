@@ -249,6 +249,14 @@ public class DualWebSocketService : IDisposable
                 await HandleGetCapabilities(socket, request);
                 break;
 
+            case ProtocolActions.GetDeviceCapabilities:
+                await HandleGetDeviceCapabilities(socket, request);
+                break;
+
+            case ProtocolActions.ApplyDeviceSettings:
+                await HandleApplyDeviceSettings(socket, request);
+                break;
+
             case ProtocolActions.Scan:
                 await HandleScan(socket, request);
                 break;
@@ -627,6 +635,71 @@ public class DualWebSocketService : IDisposable
             RequestId = request.RequestId,
             Status = ResponseStatus.Cancelled,
             Message = "Scan stopped"
+        };
+
+        await SendResponse(socket, response);
+    }
+
+    private async Task HandleGetDeviceCapabilities(IWebSocketConnection socket, ScanRequest request)
+    {
+        if (!await ValidateSession(socket, request)) return;
+
+        if (_scannerManager == null)
+        {
+            await SendError(socket, request.RequestId, ErrorCodes.InternalError, "ScannerManager not available");
+            return;
+        }
+
+        var (scannerId, protocol, capabilities) = await _scannerManager.GetDeviceCapabilitiesAsync();
+        if (scannerId == null || protocol == null)
+        {
+            await SendError(socket, request.RequestId, ErrorCodes.ScannerNotFound, "No scanner selected");
+            return;
+        }
+
+        var response = new DeviceCapabilitiesResponse
+        {
+            Action = ProtocolActions.GetDeviceCapabilities,
+            RequestId = request.RequestId,
+            ScannerId = scannerId,
+            Protocol = protocol,
+            Capabilities = capabilities
+        };
+
+        await SendResponse(socket, response);
+    }
+
+    private async Task HandleApplyDeviceSettings(IWebSocketConnection socket, ScanRequest request)
+    {
+        if (!await ValidateSession(socket, request)) return;
+
+        if (_scannerManager == null)
+        {
+            await SendError(socket, request.RequestId, ErrorCodes.InternalError, "ScannerManager not available");
+            return;
+        }
+
+        if (request.Patch == null && (request.Advanced == null || request.Advanced.Count == 0))
+        {
+            await SendError(socket, request.RequestId, ErrorCodes.InvalidRequest, "patch or advanced is required");
+            return;
+        }
+
+        var patch = request.Patch ?? new DeviceSettingsPatch();
+        var (scannerId, protocol, results) = await _scannerManager.ApplyDeviceSettingsAsync(patch, request.Advanced);
+        if (scannerId == null || protocol == null)
+        {
+            await SendError(socket, request.RequestId, ErrorCodes.ScannerNotFound, "No scanner selected");
+            return;
+        }
+
+        var response = new ApplyDeviceSettingsResponse
+        {
+            Action = ProtocolActions.ApplyDeviceSettings,
+            RequestId = request.RequestId,
+            ScannerId = scannerId,
+            Protocol = protocol,
+            Results = results
         };
 
         await SendResponse(socket, response);

@@ -25,6 +25,51 @@ public class ScanRequest
 
     [JsonPropertyName("settings")]
     public ScanSettings? Settings { get; set; }
+
+    /// <summary>
+    /// Patch-style settings update (only apply provided fields).
+    /// Used by apply_device_settings.
+    /// </summary>
+    [JsonPropertyName("patch")]
+    public DeviceSettingsPatch? Patch { get; set; }
+
+    /// <summary>
+    /// Advanced per-device settings, keyed by capability key (e.g., "twain.duplexMode").
+    /// Used by apply_device_settings for experimental/vendor-specific options.
+    /// </summary>
+    [JsonPropertyName("advanced")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, JsonElement>? Advanced { get; set; }
+}
+
+/// <summary>
+/// Patch-style scan settings. Any null field means "no change".
+/// </summary>
+public class DeviceSettingsPatch
+{
+    [JsonPropertyName("dpi")]
+    public int? Dpi { get; set; }
+
+    [JsonPropertyName("pixelType")]
+    public string? PixelType { get; set; }
+
+    [JsonPropertyName("paperSize")]
+    public string? PaperSize { get; set; }
+
+    [JsonPropertyName("duplex")]
+    public bool? Duplex { get; set; }
+
+    [JsonPropertyName("showUI")]
+    public bool? ShowUI { get; set; }
+
+    [JsonPropertyName("useAdf")]
+    public bool? UseAdf { get; set; }
+
+    [JsonPropertyName("maxPages")]
+    public int? MaxPages { get; set; }
+
+    [JsonPropertyName("continuousScan")]
+    public bool? ContinuousScan { get; set; }
 }
 
 /// <summary>
@@ -229,6 +274,92 @@ public class ErrorResponse : ScanResponse
     }
 }
 
+/// <summary>
+/// Capability descriptor for dynamic settings UI.
+/// Strict mode: stable capabilities are safe across drivers; experimental capabilities are best-effort.
+/// </summary>
+public class DeviceCapability
+{
+    [JsonPropertyName("key")]
+    public string Key { get; set; } = string.Empty;
+
+    [JsonPropertyName("label")]
+    public string Label { get; set; } = string.Empty;
+
+    [JsonPropertyName("description")]
+    public string? Description { get; set; }
+
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = "string"; // bool | int | enum | string
+
+    [JsonPropertyName("isReadable")]
+    public bool IsReadable { get; set; }
+
+    [JsonPropertyName("isWritable")]
+    public bool IsWritable { get; set; }
+
+    [JsonPropertyName("experimental")]
+    public bool Experimental { get; set; }
+
+    [JsonPropertyName("supportedValues")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? SupportedValues { get; set; }
+
+    [JsonPropertyName("currentValue")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public object? CurrentValue { get; set; }
+}
+
+/// <summary>
+/// Response for get_device_capabilities.
+/// </summary>
+public class DeviceCapabilitiesResponse : ScanResponse
+{
+    [JsonPropertyName("scannerId")]
+    public string? ScannerId { get; set; }
+
+    [JsonPropertyName("protocol")]
+    public string? Protocol { get; set; }
+
+    [JsonPropertyName("capabilities")]
+    public List<DeviceCapability> Capabilities { get; set; } = new();
+}
+
+/// <summary>
+/// Per-field result for apply_device_settings.
+/// </summary>
+public class DeviceSettingResult
+{
+    [JsonPropertyName("key")]
+    public string Key { get; set; } = string.Empty;
+
+    [JsonPropertyName("status")]
+    public string Status { get; set; } = ResponseStatus.Success; // success | error | warn
+
+    [JsonPropertyName("message")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Message { get; set; }
+
+    [JsonPropertyName("appliedValue")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public object? AppliedValue { get; set; }
+}
+
+/// <summary>
+/// Response for apply_device_settings.
+/// </summary>
+public class ApplyDeviceSettingsResponse : ScanResponse
+{
+    [JsonPropertyName("results")]
+    public List<DeviceSettingResult> Results { get; set; } = new();
+
+    [JsonPropertyName("scannerId")]
+    public string? ScannerId { get; set; }
+
+    [JsonPropertyName("protocol")]
+    public string? Protocol { get; set; }
+}
+
 #endregion
 
 #region Protocol Actions
@@ -242,6 +373,8 @@ public static class ProtocolActions
     public const string ListScanners = "list_scanners";
     public const string SelectScanner = "select_scanner";
     public const string GetCapabilities = "get_capabilities";
+    public const string GetDeviceCapabilities = "get_device_capabilities";
+    public const string ApplyDeviceSettings = "apply_device_settings";
     public const string Scan = "scan";
     public const string StopScan = "stop_scan";
     public const string Ping = "ping";

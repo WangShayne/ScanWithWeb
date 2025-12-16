@@ -163,6 +163,16 @@ public class WebSocketService : IDisposable
                 await HandleGetCapabilities(socket, request);
                 break;
 
+            case ProtocolActions.GetDeviceCapabilities:
+                await SendError(socket, request.RequestId, ErrorCodes.InvalidRequest,
+                    "get_device_capabilities requires DualWebSocketService (multi-protocol mode)");
+                break;
+
+            case ProtocolActions.ApplyDeviceSettings:
+                await SendError(socket, request.RequestId, ErrorCodes.InvalidRequest,
+                    "apply_device_settings requires DualWebSocketService (multi-protocol mode)");
+                break;
+
             case ProtocolActions.Scan:
                 await HandleScan(socket, request);
                 break;

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ScanWithWeb - Test Page</title>
+    <title>ScanWithWeb - 测试页</title>
     <style>
         * {
             margin: 0;
@@ -346,27 +346,54 @@
             height: 16px;
             cursor: pointer;
         }
+
+        details.advanced-settings {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 15px;
+        }
+        details.advanced-settings summary {
+            cursor: pointer;
+            font-weight: 600;
+            color: #555;
+            font-size: 14px;
+            user-select: none;
+        }
+        details.advanced-settings[open] summary {
+            margin-bottom: 10px;
+        }
+        .advanced-warning {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            border-radius: 6px;
+            padding: 10px 12px;
+            font-size: 13px;
+            color: #856404;
+            margin-top: 10px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="card">
-            <h1>ScanWithWeb Test Page</h1>
-            <p class="subtitle">Test scanner connection and scanning functionality</p>
+            <h1>ScanWithWeb 测试页</h1>
+            <p class="subtitle">用于测试扫描仪连接与扫描功能（本地 ScanWithWeb 服务）</p>
 
             <div class="protocol-info">
-                <span class="protocol-badge twain">TWAIN</span> Local USB scanners (<strong>requires 32-bit app</strong>)
-                <span class="protocol-badge wia">WIA</span> Windows scanners (64-bit native)
-                <span class="protocol-badge escl">ESCL</span> Network/AirPrint scanners
+                <span class="protocol-badge twain">TWAIN</span> 本地 USB 扫描仪（<strong>通常需要 32 位程序</strong>）
+                <span class="protocol-badge wia">WIA</span> Windows 扫描仪（64 位原生）
+                <span class="protocol-badge escl">ESCL</span> 网络 / AirPrint 扫描仪
             </div>
 
             <div class="protocol-note" style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 10px 15px; margin-bottom: 15px; font-size: 13px; color: #856404;">
-                <strong>💡 Tip:</strong> If your scanner only supports TWAIN (most USB scanners), please use the <strong>32-bit version</strong> of ScanWithWeb (ScanWithWeb-x86.exe).
-                WIA and ESCL protocols work with both 32-bit and 64-bit versions.
+                <strong>提示：</strong> 如果你的扫描仪只支持 TWAIN（多数 USB 扫描仪），请使用 <strong>32 位版本</strong> 的 ScanWithWeb（ScanWithWeb-x86.exe）。
+                WIA / ESCL 一般在 32 位与 64 位版本都可使用。
             </div>
 
             <div class="protocol-filter">
-                <label style="font-weight: 600; margin-right: 15px;">Protocol Filter:</label>
+                <label style="font-weight: 600; margin-right: 15px;">协议筛选：</label>
                 <label class="protocol-checkbox">
                     <input type="checkbox" name="protocol-filter" value="twain" checked> TWAIN
                 </label>
@@ -376,30 +403,30 @@
                 <label class="protocol-checkbox">
                     <input type="checkbox" name="protocol-filter" value="escl" checked> ESCL
                 </label>
-                <button id="btnRefresh" class="btn-secondary" style="padding: 6px 12px; margin-left: 10px;">Refresh</button>
+                <button id="btnRefresh" class="btn-secondary" style="padding: 6px 12px; margin-left: 10px;">刷新列表</button>
             </div>
 
             <div class="protocol-select">
                 <label>
-                    <input type="radio" name="protocol" value="ws" checked> WS (ws://localhost:8180)
+                    <input type="radio" name="protocol" value="ws" checked> WS（HTTP）ws://localhost:8180
                 </label>
                 <label>
-                    <input type="radio" name="protocol" value="wss"> WSS (wss://localhost:8181)
+                    <input type="radio" name="protocol" value="wss"> WSS（HTTPS）wss://localhost:8181
                 </label>
             </div>
 
             <div class="status-bar">
                 <div class="status-item">
                     <span class="status-dot" id="wsStatus"></span>
-                    <span id="wsText">WS: Disconnected</span>
+                    <span id="wsText">WS：未连接</span>
                 </div>
                 <div class="status-item">
                     <span class="status-dot" id="authStatus"></span>
-                    <span id="authText">Auth: Not authenticated</span>
+                    <span id="authText">认证：未认证</span>
                 </div>
                 <div class="status-item">
                     <span class="status-dot" id="scannerStatus"></span>
-                    <span id="scannerText">Scanner: None</span>
+                    <span id="scannerText">扫描仪：未选择</span>
                 </div>
             </div>
 
@@ -411,9 +438,9 @@
         <div class="card">
             <div class="controls">
                 <div class="control-group">
-                    <label>Scanner</label>
+                    <label>扫描仪</label>
                     <select id="scannerSelect" disabled>
-                        <option value="">-- Select Scanner --</option>
+                        <option value="">-- 请选择扫描仪 --</option>
                     </select>
                 </div>
                 <div class="control-group">
@@ -426,15 +453,15 @@
                     </select>
                 </div>
                 <div class="control-group">
-                    <label>Color Mode</label>
+                    <label>颜色模式</label>
                     <select id="colorSelect">
-                        <option value="RGB" selected>Color (RGB)</option>
-                        <option value="Gray8">Grayscale</option>
-                        <option value="BlackWhite">Black & White</option>
+                        <option value="RGB" selected>彩色（RGB）</option>
+                        <option value="Gray8">灰度</option>
+                        <option value="BlackWhite">黑白</option>
                     </select>
                 </div>
                 <div class="control-group">
-                    <label>Paper Size</label>
+                    <label>纸张尺寸</label>
                     <select id="paperSelect">
                         <option value="A4" selected>A4</option>
                         <option value="A3">A3</option>
@@ -444,39 +471,22 @@
                 </div>
             </div>
 
-            <!-- Advanced Settings -->
+            <!-- Common Settings (Strict Strategy: stable options are visible; advanced options are hidden by default) -->
             <div style="margin-bottom: 15px;">
-                <div style="font-weight: 600; margin-bottom: 10px; color: #555; font-size: 14px;">Advanced Settings</div>
+                <div style="font-weight: 600; margin-bottom: 10px; color: #555; font-size: 14px;">扫描设置</div>
                 <div class="settings-row" style="display: flex; flex-wrap: wrap; gap: 15px;">
                     <label class="checkbox-label" style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
                         <input type="checkbox" id="useAdf" checked>
-                        <span>Use ADF (Feeder)</span>
+                        <span>使用自动进纸器（ADF）</span>
                     </label>
                     <label class="checkbox-label" style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
                         <input type="checkbox" id="duplex">
-                        <span>Duplex (2-sided)</span>
-                    </label>
-                    <label class="checkbox-label" style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                        <input type="checkbox" id="showUI">
-                        <span>Show Scanner UI (TWAIN)</span>
-                    </label>
-                    <label class="checkbox-label" style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                        <input type="checkbox" id="continuousScan">
-                        <span>Continuous Scan (Auto)</span>
+                        <span>双面扫描</span>
                     </label>
                     <div style="display: flex; align-items: center; gap: 6px;">
-                        <label for="scanInterval">Interval:</label>
-                        <select id="scanInterval" style="padding: 4px 8px; border-radius: 4px; border: 1px solid #ddd;">
-                            <option value="1000">1 sec</option>
-                            <option value="2000" selected>2 sec</option>
-                            <option value="3000">3 sec</option>
-                            <option value="5000">5 sec</option>
-                        </select>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 6px;">
-                        <label for="maxPages">Max Pages:</label>
+                        <label for="maxPages">最大页数：</label>
                         <select id="maxPages" style="padding: 4px 8px; border-radius: 4px; border: 1px solid #ddd;">
-                            <option value="-1" selected>Unlimited</option>
+                            <option value="-1" selected>不限</option>
                             <option value="1">1</option>
                             <option value="5">5</option>
                             <option value="10">10</option>
@@ -485,33 +495,60 @@
                         </select>
                     </div>
                 </div>
-                <div class="tip-text" style="font-size: 12px; color: #888; margin-top: 8px;">
-                    💡 <strong>Continuous Scan</strong>: Automatically scans next page after interval. Click <strong>Stop</strong> to finish.
-                </div>
             </div>
 
+            <details class="advanced-settings" id="advancedSettings">
+                <summary>高级/实验设置（动态渲染，默认关闭）</summary>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px;">
+                    <button id="btnLoadCaps" class="btn-secondary" style="padding: 8px 12px;">读取设备能力</button>
+                    <button id="btnApplyCaps" class="btn-secondary" style="padding: 8px 12px;">应用高级设置</button>
+                </div>
+                <div id="capsContainer" style="margin-top: 12px;"></div>
+                <div style="margin-top: 12px;">
+                    <div style="font-weight: 600; margin-bottom: 8px; color: #555; font-size: 14px;">连续扫描（应用层功能）</div>
+                    <div class="settings-row" style="display: flex; flex-wrap: wrap; gap: 15px;">
+                        <label class="checkbox-label" style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                            <input type="checkbox" id="continuousScan">
+                            <span>连续扫描（自动下一次）</span>
+                        </label>
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                            <label for="scanInterval">间隔：</label>
+                            <select id="scanInterval" style="padding: 4px 8px; border-radius: 4px; border: 1px solid #ddd;">
+                                <option value="1000">1 秒</option>
+                                <option value="2000" selected>2 秒</option>
+                                <option value="3000">3 秒</option>
+                                <option value="5000">5 秒</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="advanced-warning">
+                    <strong>说明：</strong> 高级/实验能力会根据当前已选择的扫描仪动态显示。仅推荐在无法通过基础设置完成需求时使用。
+                </div>
+            </details>
+
             <div class="btn-group">
-                <button id="btnConnect" class="btn-primary">Connect</button>
-                <button id="btnScan" class="btn-primary" disabled>Scan</button>
-                <button id="btnStop" class="btn-danger" disabled>Stop</button>
-                <button id="btnClear" class="btn-secondary">Clear Images</button>
+                <button id="btnConnect" class="btn-primary">连接</button>
+                <button id="btnScan" class="btn-primary" disabled>开始扫描</button>
+                <button id="btnStop" class="btn-danger" disabled>停止</button>
+                <button id="btnClear" class="btn-secondary">清空图片</button>
             </div>
         </div>
 
         <div class="card">
-            <h3 style="margin-bottom: 15px; color: #333;">Scanned Images</h3>
+            <h3 style="margin-bottom: 15px; color: #333;">扫描图片</h3>
             <div id="gallery" class="gallery">
                 <div class="empty-state">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
-                    <p>No scanned images yet</p>
+                    <p>暂无扫描图片</p>
                 </div>
             </div>
         </div>
 
         <div class="card">
-            <h3 style="margin-bottom: 15px; color: #333;">Connection Log</h3>
+            <h3 style="margin-bottom: 15px; color: #333;">连接日志</h3>
             <div class="log-panel" id="logPanel"></div>
         </div>
     </div>
@@ -525,6 +562,7 @@
         let images = [];
         let currentPage = 0;
         let continuousScanTimer = null;  // Timer for auto-continuing scans
+        let deviceCaps = [];            // device capability descriptors (from service)
 
         // DOM elements
         const wsStatus = document.getElementById('wsStatus');
@@ -541,6 +579,194 @@
         const gallery = document.getElementById('gallery');
         const progressBar = document.getElementById('progressBar');
         const progressFill = document.getElementById('progressFill');
+        const btnLoadCaps = document.getElementById('btnLoadCaps');
+        const btnApplyCaps = document.getElementById('btnApplyCaps');
+        const capsContainer = document.getElementById('capsContainer');
+
+        function getCheckboxValue(id, fallback = false) {
+            const el = document.getElementById(id);
+            if (!el) return fallback;
+            return !!el.checked;
+        }
+
+        function requestDeviceCapabilities() {
+            if (!token) {
+                log('未认证：请先点击“连接”', 'warn');
+                return;
+            }
+            if (!selectedScanner) {
+                log('请先选择扫描仪，再读取设备能力。', 'warn');
+                return;
+            }
+            log('正在读取设备能力（get_device_capabilities）...', 'info');
+            send({
+                action: 'get_device_capabilities',
+                token: token
+            });
+        }
+
+        function renderCapabilities(caps) {
+            if (!capsContainer) return;
+            capsContainer.innerHTML = '';
+
+            const experimentalCaps = (caps || []).filter(c => c && c.experimental);
+            if (experimentalCaps.length === 0) {
+                capsContainer.innerHTML = '<div style="color:#666;font-size:13px;">暂无可用的高级/实验能力（或当前协议不支持）。</div>';
+                return;
+            }
+
+            const wrapper = document.createElement('div');
+            wrapper.style.display = 'grid';
+            wrapper.style.gridTemplateColumns = 'repeat(auto-fit, minmax(220px, 1fr))';
+            wrapper.style.gap = '12px';
+
+            experimentalCaps.forEach(cap => {
+                const group = document.createElement('div');
+                group.className = 'control-group';
+
+                const label = document.createElement('label');
+                label.textContent = cap.label || cap.key;
+                group.appendChild(label);
+
+                let inputEl = null;
+
+                if (cap.type === 'bool') {
+                    const row = document.createElement('label');
+                    row.className = 'checkbox-label';
+                    row.style.display = 'flex';
+                    row.style.alignItems = 'center';
+                    row.style.gap = '8px';
+                    row.style.cursor = cap.isWritable ? 'pointer' : 'not-allowed';
+
+                    const cb = document.createElement('input');
+                    cb.type = 'checkbox';
+                    cb.id = cap.key; // keep simple for showUI
+                    cb.checked = !!cap.currentValue;
+                    cb.disabled = !cap.isWritable;
+
+                    const span = document.createElement('span');
+                    span.textContent = cap.isWritable ? '启用' : '不可设置';
+
+                    row.appendChild(cb);
+                    row.appendChild(span);
+                    group.appendChild(row);
+                    inputEl = cb;
+                } else if (cap.type === 'enum' && Array.isArray(cap.supportedValues)) {
+                    const sel = document.createElement('select');
+                    sel.id = cap.key;
+                    sel.disabled = !cap.isWritable;
+                    cap.supportedValues.forEach(v => {
+                        const opt = document.createElement('option');
+                        opt.value = v;
+                        opt.textContent = v;
+                        sel.appendChild(opt);
+                    });
+                    if (cap.currentValue != null) {
+                        sel.value = String(cap.currentValue);
+                    }
+                    group.appendChild(sel);
+                    inputEl = sel;
+                } else if (cap.type === 'int') {
+                    const inp = document.createElement('input');
+                    inp.type = 'number';
+                    inp.id = cap.key;
+                    inp.disabled = !cap.isWritable;
+                    if (cap.currentValue != null) {
+                        inp.value = String(cap.currentValue);
+                    }
+                    group.appendChild(inp);
+                    inputEl = inp;
+                } else {
+                    const note = document.createElement('div');
+                    note.style.color = '#888';
+                    note.style.fontSize = '12px';
+                    note.textContent = '该能力暂不支持在测试页中编辑';
+                    group.appendChild(note);
+                }
+
+                if (cap.description) {
+                    const desc = document.createElement('div');
+                    desc.style.color = '#888';
+                    desc.style.fontSize = '12px';
+                    desc.style.marginTop = '6px';
+                    desc.textContent = cap.description;
+                    group.appendChild(desc);
+                }
+
+                // Special strict-strategy behavior: if ShowUI enabled, disable continuous scan (app-level).
+                if (cap.key === 'showUI' && inputEl && inputEl.type === 'checkbox') {
+                    inputEl.addEventListener('change', () => {
+                        if (inputEl.checked && document.getElementById('continuousScan')?.checked) {
+                            document.getElementById('continuousScan').checked = false;
+                            if (continuousScanTimer) {
+                                clearTimeout(continuousScanTimer);
+                                continuousScanTimer = null;
+                            }
+                            log('已启用“显示驱动界面（ShowUI）”，连续扫描已自动关闭。', 'warn');
+                        }
+                    });
+                }
+
+                wrapper.appendChild(group);
+            });
+
+            capsContainer.appendChild(wrapper);
+        }
+
+        function applyExperimentalSettings() {
+            if (!token) {
+                log('未认证：请先点击“连接”', 'warn');
+                return;
+            }
+            if (!selectedScanner) {
+                log('请先选择扫描仪，再应用设置。', 'warn');
+                return;
+            }
+
+            // Strict strategy: only apply experimental settings via this API.
+            const patch = {};
+            const advanced = {};
+
+            const experimentalCaps = (deviceCaps || []).filter(c => c && c.experimental);
+            experimentalCaps.forEach(cap => {
+                const el = document.getElementById(cap.key);
+                if (!el || el.disabled) return;
+
+                // Settings patch (typed)
+                if (cap.key === 'showUI' && el.type === 'checkbox') {
+                    patch.showUI = !!el.checked;
+                    return;
+                }
+
+                // Advanced key/value
+                if (cap.type === 'bool' && el.type === 'checkbox') {
+                    advanced[cap.key] = !!el.checked;
+                    return;
+                }
+                if (cap.type === 'enum' && el.tagName === 'SELECT') {
+                    advanced[cap.key] = el.value;
+                    return;
+                }
+                if (cap.type === 'int' && (el.type === 'number' || el.tagName === 'INPUT')) {
+                    const num = parseInt(el.value, 10);
+                    if (!Number.isNaN(num)) advanced[cap.key] = num;
+                    return;
+                }
+            });
+
+            if (Object.keys(patch).length === 0 && Object.keys(advanced).length === 0) {
+                log('没有可应用的高级/实验设置（请先读取设备能力）。', 'warn');
+                return;
+            }
+
+            log('正在应用高级/实验设置（apply_device_settings）...', 'info');
+            send({
+                action: 'apply_device_settings',
+                token: token,
+                patch: patch,
+                advanced: advanced
+            });
+        }
 
         // Get WebSocket URL based on selected protocol
         function getWsUrl() {
@@ -573,18 +799,18 @@
             }
 
             const wsUrl = getWsUrl();
-            log(`Connecting to ${wsUrl}...`);
+            log(`正在连接到 ${wsUrl}...`);
             btnConnect.disabled = true;
-            btnConnect.textContent = 'Connecting...';
+            btnConnect.textContent = '连接中...';
 
             try {
                 ws = new WebSocket(wsUrl);
 
                 ws.onopen = () => {
                     const protocol = document.querySelector('input[name="protocol"]:checked').value.toUpperCase();
-                    log('WebSocket connected', 'success');
-                    updateStatus(wsStatus, wsText, true, `WS: Connected (${protocol})`);
-                    btnConnect.textContent = 'Disconnect';
+                    log('WebSocket 已连接', 'success');
+                    updateStatus(wsStatus, wsText, true, `WS：已连接（${protocol}）`);
+                    btnConnect.textContent = '断开连接';
                     btnConnect.disabled = false;
 
                     // Authenticate
@@ -592,11 +818,11 @@
                 };
 
                 ws.onclose = (e) => {
-                    log(`WebSocket disconnected: ${e.reason || 'Connection closed'}`, 'warn');
-                    updateStatus(wsStatus, wsText, false, 'WS: Disconnected');
-                    updateStatus(authStatus, authText, false, 'Auth: Not authenticated');
-                    updateStatus(scannerStatus, scannerText, false, 'Scanner: None');
-                    btnConnect.textContent = 'Connect';
+                    log(`WebSocket 已断开：${e.reason || '连接已关闭'}`, 'warn');
+                    updateStatus(wsStatus, wsText, false, 'WS：未连接');
+                    updateStatus(authStatus, authText, false, '认证：未认证');
+                    updateStatus(scannerStatus, scannerText, false, '扫描仪：未选择');
+                    btnConnect.textContent = '连接';
                     btnConnect.disabled = false;
                     btnScan.disabled = true;
                     scannerSelect.disabled = true;
@@ -605,18 +831,18 @@
                 };
 
                 ws.onerror = (e) => {
-                    log('WebSocket error - check if ScanWithWeb service is running', 'error');
+                    log('WebSocket 错误：请确认 ScanWithWeb 服务已启动', 'error');
                     btnConnect.disabled = false;
-                    btnConnect.textContent = 'Connect';
+                    btnConnect.textContent = '连接';
                 };
 
                 ws.onmessage = (e) => {
                     handleMessage(e.data);
                 };
             } catch (err) {
-                log(`Connection error: ${err.message}`, 'error');
+                log(`连接失败：${err.message}`, 'error');
                 btnConnect.disabled = false;
-                btnConnect.textContent = 'Connect';
+                btnConnect.textContent = '连接';
             }
         }
 
@@ -629,7 +855,7 @@
 
         // Authenticate
         function authenticate() {
-            log('Authenticating...');
+            log('正在认证...');
             send({
                 action: 'authenticate',
                 clientId: 'test-page-' + Date.now()
@@ -645,7 +871,7 @@
         // Get scanners
         function getScanners() {
             const protocols = getSelectedProtocols();
-            log(`Getting scanner list... (protocols: ${protocols.length > 0 ? protocols.join(', ') : 'all'})`);
+            log(`正在获取扫描仪列表...（协议：${protocols.length > 0 ? protocols.join(', ') : '全部'}）`);
             send({
                 action: 'list_scanners',
                 token: token,
@@ -658,7 +884,7 @@
         // Select scanner
         function selectScanner(name) {
             if (!name) return;
-            log(`Selecting scanner: ${name}`);
+            log(`正在选择扫描仪：${name}`);
             send({
                 action: 'select_scanner',
                 token: token,
@@ -672,22 +898,34 @@
         function startScan(isContinuation = false) {
             if (!selectedScanner || !token) return;
 
+            // Strict strategy: advanced options are off by default.
+            // When ShowUI is enabled, disable continuous scan to avoid driver UI disrupting the flow.
+            const showUIEnabled = getCheckboxValue('showUI', false);
+            if (showUIEnabled && document.getElementById('continuousScan').checked) {
+                document.getElementById('continuousScan').checked = false;
+                if (continuousScanTimer) {
+                    clearTimeout(continuousScanTimer);
+                    continuousScanTimer = null;
+                }
+                log('已启用“显示驱动界面（ShowUI）”，连续扫描已自动关闭。', 'warn');
+            }
+
             const settings = {
                 dpi: parseInt(document.getElementById('dpiSelect').value),
                 pixelType: document.getElementById('colorSelect').value,
                 paperSize: document.getElementById('paperSelect').value,
                 useAdf: document.getElementById('useAdf').checked,
                 duplex: document.getElementById('duplex').checked,
-                showUI: document.getElementById('showUI').checked,
+                showUI: showUIEnabled,
                 continuousScan: document.getElementById('continuousScan').checked,
                 maxPages: isContinuation ? 1 : parseInt(document.getElementById('maxPages').value)  // Scan 1 page at a time in continuous mode
             };
 
             if (!isContinuation) {
-                log(`Starting scan: DPI=${settings.dpi}, Color=${settings.pixelType}, Paper=${settings.paperSize}, ADF=${settings.useAdf}, Duplex=${settings.duplex}, ShowUI=${settings.showUI}, Continuous=${settings.continuousScan}, MaxPages=${settings.maxPages}`);
+                log(`开始扫描：DPI=${settings.dpi}，颜色=${settings.pixelType}，纸张=${settings.paperSize}，ADF=${settings.useAdf}，双面=${settings.duplex}，ShowUI=${settings.showUI}，连续=${settings.continuousScan}，最大页数=${settings.maxPages}`);
                 currentPage = 0;
             } else {
-                log(`Continuing scan: Page ${currentPage + 1}...`, 'info');
+                log(`继续扫描：第 ${currentPage + 1} 页...`, 'info');
             }
 
             scanning = true;
@@ -704,13 +942,13 @@
 
         // Stop scan
         function stopScan() {
-            log('Stopping scan...');
+            log('正在停止扫描...');
 
             // Clear continuous scan timer if active
             if (continuousScanTimer) {
                 clearTimeout(continuousScanTimer);
                 continuousScanTimer = null;
-                log('Continuous scan stopped', 'info');
+                log('连续扫描已停止', 'info');
             }
 
             send({
@@ -729,35 +967,58 @@
         function handleMessage(data) {
             try {
                 const msg = JSON.parse(data);
-                console.log('Received message:', msg);
-                log(`Received: action=${msg.action}, status=${msg.status}`, 'info');
+                console.log('收到消息:', msg);
+                log(`收到响应：action=${msg.action}，status=${msg.status}`, 'info');
 
                 switch (msg.action || msg.status) {
                     case 'authenticate':
                     case 'authenticated':
                         if (msg.token) {
                             token = msg.token;
-                            log(`Authenticated successfully, token: ${token.substring(0, 8)}...`, 'success');
-                            updateStatus(authStatus, authText, true, 'Auth: Authenticated');
+                            log(`认证成功，token：${token.substring(0, 8)}...`, 'success');
+                            updateStatus(authStatus, authText, true, '认证：已认证');
                             getScanners();
                         }
                         break;
 
                     case 'list_scanners':
-                        log(`Scanners received: ${JSON.stringify(msg.scanners)}`, 'info');
+                        log(`收到扫描仪列表：${JSON.stringify(msg.scanners)}`, 'info');
                         populateScanners(msg.scanners || []);
                         break;
 
                     case 'select_scanner':
                         if (msg.status === 'success') {
                             selectedScanner = scannerSelect.value;
-                            log(`Scanner selected: ${selectedScanner}`, 'success');
-                            updateStatus(scannerStatus, scannerText, true, `Scanner: ${selectedScanner}`);
+                            log(`已选择扫描仪：${selectedScanner}`, 'success');
+                            updateStatus(scannerStatus, scannerText, true, `扫描仪：${selectedScanner}`);
                             btnScan.disabled = false;
+                            requestDeviceCapabilities();
                         } else {
-                            log(`Scanner selection failed: ${msg.message || msg.status || 'Unknown error'}`, 'error');
-                            updateStatus(scannerStatus, scannerText, false, 'Scanner: Selection failed');
+                            log(`选择扫描仪失败：${msg.message || msg.status || '未知错误'}`, 'error');
+                            updateStatus(scannerStatus, scannerText, false, '扫描仪：选择失败');
                             btnScan.disabled = true;
+                        }
+                        break;
+
+                    case 'get_device_capabilities':
+                        deviceCaps = msg.capabilities || [];
+                        log(`设备能力已更新：实验项=${deviceCaps.filter(c => c.experimental).length}，总数=${deviceCaps.length}`, 'success');
+                        renderCapabilities(deviceCaps);
+                        break;
+
+                    case 'apply_device_settings':
+                        if (msg.status === 'success') {
+                            const results = msg.results || [];
+                            const errors = results.filter(r => r.status === 'error');
+                            log(`应用设置完成：成功=${results.length - errors.length}，失败=${errors.length}`, errors.length > 0 ? 'warn' : 'success');
+                            results.slice(0, 20).forEach(r => {
+                                const status = r.status || 'success';
+                                const msgText = r.message ? `，${r.message}` : '';
+                                log(`- ${r.key}: ${status}${msgText}`, status === 'error' ? 'error' : (status === 'warn' ? 'warn' : 'info'));
+                            });
+                            requestDeviceCapabilities();
+                        } else {
+                            log(`应用设置失败：${msg.message || '未知错误'}`, 'error');
                         }
                         break;
 
@@ -770,7 +1031,7 @@
                         if (msg.data && msg.metadata) {
                             handleImage(msg);
                         } else if (msg.status === 'completed') {
-                            log(`Scan complete: ${msg.totalPages || currentPage} page(s)`, 'success');
+                            log(`扫描完成：${msg.totalPages || currentPage} 页`, 'success');
                             scanning = false;
                             btnStop.disabled = true;
                             progressBar.classList.remove('active');
@@ -783,7 +1044,7 @@
                     case 'stop_scan':
                         // Stop scan response
                         if (msg.status === 'cancelled') {
-                            log('Scan cancelled', 'warn');
+                            log('扫描已取消', 'warn');
                             scanning = false;
                             btnScan.disabled = false;
                             btnStop.disabled = true;
@@ -793,7 +1054,7 @@
 
                     case 'scan_complete':
                     case 'completed':
-                        log(`Scan complete: ${msg.totalPages || currentPage} page(s)`, 'success');
+                        log(`扫描完成：${msg.totalPages || currentPage} 页`, 'success');
                         scanning = false;
                         btnStop.disabled = true;
                         progressBar.classList.remove('active');
@@ -802,7 +1063,7 @@
 
                     case 'scan_cancelled':
                     case 'cancelled':
-                        log('Scan cancelled', 'warn');
+                        log('扫描已取消', 'warn');
                         scanning = false;
                         btnScan.disabled = false;
                         btnStop.disabled = true;
@@ -811,13 +1072,13 @@
 
                     case 'error':
                     case 'scan_error':
-                        const errorMsg = msg.message || msg.error || 'Unknown error';
+                        const errorMsg = msg.message || msg.error || '未知错误';
                         const errorCode = msg.errorCode || '';
-                        log(`Error: ${errorMsg} (${errorCode})`, 'error');
+                        log(`错误：${errorMsg}（${errorCode}）`, 'error');
 
                         // Handle scanner-related errors
                         if (errorCode === 'SCANNER_NOT_FOUND' || errorMsg.toLowerCase().includes('scanner')) {
-                            updateStatus(scannerStatus, scannerText, false, 'Scanner: Error');
+                            updateStatus(scannerStatus, scannerText, false, '扫描仪：错误');
                             btnScan.disabled = true;
                             selectedScanner = null;
                         }
@@ -827,7 +1088,7 @@
                             errorMsg.toLowerCase().includes('paper') ||
                             errorMsg.toLowerCase().includes('feeder') ||
                             errorMsg.toLowerCase().includes('offline')) {
-                            alert(`⚠️ Scanner Error\n\n${errorMsg}`);
+                            alert(`⚠️ 扫描仪错误\n\n${errorMsg}`);
                         }
 
                         if (scanning) {
@@ -843,33 +1104,33 @@
                             // Image data
                             handleImage(msg);
                         } else {
-                            log(`Response: ${JSON.stringify(msg).substring(0, 100)}...`);
+                            log(`响应：${JSON.stringify(msg).substring(0, 100)}...`);
                         }
                 }
             } catch (err) {
-                log(`Parse error: ${err.message}`, 'error');
+                log(`解析失败：${err.message}`, 'error');
             }
         }
 
         // Populate scanner dropdown
         function populateScanners(scanners) {
-            scannerSelect.innerHTML = '<option value="">-- Select Scanner --</option>';
+            scannerSelect.innerHTML = '<option value="">-- 请选择扫描仪 --</option>';
 
             if (scanners.length === 0) {
-                log('No scanners found', 'warn');
-                updateStatus(scannerStatus, scannerText, false, 'Scanner: None found');
+                log('未找到扫描仪', 'warn');
+                updateStatus(scannerStatus, scannerText, false, '扫描仪：未找到');
                 return;
             }
 
             scanners.forEach(s => {
                 // Handle different scanner object formats
                 const scannerId = typeof s === 'string' ? s : (s.id || s.name || null);
-                const scannerName = typeof s === 'string' ? s : (s.name || s.id || 'Unknown Scanner');
+                const scannerName = typeof s === 'string' ? s : (s.name || s.id || '未知扫描仪');
                 const protocol = typeof s === 'object' ? s.protocol : null;
 
                 // Skip only if we have no valid identifier at all
                 if (!scannerId) {
-                    log(`Skipping scanner with no identifier: ${JSON.stringify(s)}`, 'warn');
+                    log(`跳过无标识的扫描仪：${JSON.stringify(s)}`, 'warn');
                     return;
                 }
 
@@ -893,13 +1154,13 @@
                 .map(([p, c]) => `${p.toUpperCase()}:${c}`)
                 .join(', ');
 
-            log(`Found ${scanners.length} scanner(s) (${protocolInfo})`, 'success');
+            log(`找到 ${scanners.length} 台扫描仪（${protocolInfo}）`, 'success');
         }
 
         // Handle scanned image
         function handleImage(msg) {
             currentPage = msg.pageNumber || (currentPage + 1);
-            log(`Received page ${currentPage}`, 'success');
+            log(`收到第 ${currentPage} 页`, 'success');
 
             // Convert base64 to blob
             const byteChars = atob(msg.data);
@@ -919,13 +1180,23 @@
 
         // Handle continuous scan check
         function handleContinuousScanCheck() {
+            const showUIEnabled = document.getElementById('showUI').checked;
             const continuousScan = document.getElementById('continuousScan').checked;
             const maxPagesValue = parseInt(document.getElementById('maxPages').value);
             const scanInterval = parseInt(document.getElementById('scanInterval').value);
 
+            // In ShowUI mode, do not auto-continue scans.
+            if (showUIEnabled && continuousScan) {
+                document.getElementById('continuousScan').checked = false;
+                log('ShowUI 模式下不支持连续扫描，已自动关闭连续扫描。', 'warn');
+                btnScan.disabled = false;
+                btnStop.disabled = true;
+                return;
+            }
+
             // Check if we've reached max pages
             if (maxPagesValue > 0 && currentPage >= maxPagesValue) {
-                log(`Max pages (${maxPagesValue}) reached, stopping continuous scan`, 'info');
+                log(`已达到最大页数（${maxPagesValue}），停止连续扫描`, 'info');
                 btnScan.disabled = false;
                 btnStop.disabled = true;
                 return;
@@ -934,7 +1205,7 @@
             if (continuousScan) {
                 // Auto-continue scanning after interval
                 const intervalSeconds = scanInterval / 1000;
-                log(`Next scan in ${intervalSeconds} second(s)... (Click Stop to finish)`, 'info');
+                log(`${intervalSeconds} 秒后自动开始下一次扫描...（点击“停止”结束）`, 'info');
 
                 // Keep Stop button enabled during wait
                 btnStop.disabled = false;
@@ -942,7 +1213,7 @@
 
                 continuousScanTimer = setTimeout(() => {
                     continuousScanTimer = null;
-                    log('Auto-starting next scan...', 'info');
+                    log('自动开始下一次扫描...', 'info');
                     startScan(true);  // Pass true to indicate continuation
                 }, scanInterval);
             } else {
@@ -959,7 +1230,7 @@
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                         </svg>
-                        <p>No scanned images yet</p>
+                        <p>暂无扫描图片</p>
                     </div>
                 `;
                 return;
@@ -968,13 +1239,13 @@
             gallery.innerHTML = images.map((img, i) => `
                 <div class="gallery-item">
                     <div class="img-container">
-                        <img src="${img.url}" alt="Page ${img.pageNumber}" style="transform: rotate(${img.rotation}deg)">
+                        <img src="${img.url}" alt="第 ${img.pageNumber} 页" style="transform: rotate(${img.rotation}deg)">
                     </div>
-                    <span class="page-num">Page ${img.pageNumber}</span>
-                    <a href="#" onclick="downloadRotatedImage(${i}); return false;" class="download-btn">Download</a>
+                    <span class="page-num">第 ${img.pageNumber} 页</span>
+                    <a href="#" onclick="downloadRotatedImage(${i}); return false;" class="download-btn">下载</a>
                     <div class="image-controls">
-                        <button class="rotate-btn" onclick="rotateImage(${i}, -90)" title="Rotate Left">↺</button>
-                        <button class="rotate-btn" onclick="rotateImage(${i}, 90)" title="Rotate Right">↻</button>
+                        <button class="rotate-btn" onclick="rotateImage(${i}, -90)" title="左旋转">↺</button>
+                        <button class="rotate-btn" onclick="rotateImage(${i}, 90)" title="右旋转">↻</button>
                     </div>
                 </div>
             `).join('');
@@ -986,7 +1257,7 @@
             images = [];
             currentPage = 0;
             updateGallery();
-            log('Images cleared');
+            log('已清空图片');
         }
 
         // Rotate image by degrees (90 or -90)
@@ -994,7 +1265,7 @@
             if (index >= 0 && index < images.length) {
                 images[index].rotation = (images[index].rotation + degrees + 360) % 360;
                 updateGallery();
-                log(`Page ${images[index].pageNumber} rotated to ${images[index].rotation}°`, 'info');
+                log(`第 ${images[index].pageNumber} 页已旋转到 ${images[index].rotation}°`, 'info');
             }
         }
 
@@ -1042,7 +1313,7 @@
                     a.download = `scan_page_${img.pageNumber}.png`;
                     a.click();
                     URL.revokeObjectURL(url);
-                    log(`Downloaded page ${img.pageNumber} with ${rotation}° rotation`, 'success');
+                    log(`已下载第 ${img.pageNumber} 页（旋转 ${rotation}°）`, 'success');
                 }, 'image/png');
             };
             image.src = img.url;
@@ -1053,17 +1324,19 @@
         btnScan.addEventListener('click', startScan);
         btnStop.addEventListener('click', stopScan);
         btnClear.addEventListener('click', clearImages);
+        btnLoadCaps?.addEventListener('click', requestDeviceCapabilities);
+        btnApplyCaps?.addEventListener('click', applyExperimentalSettings);
         document.getElementById('btnRefresh').addEventListener('click', () => {
             if (token) {
                 getScanners();
             } else {
-                log('Not authenticated - connect first', 'warn');
+                log('未认证：请先点击“连接”', 'warn');
             }
         });
         scannerSelect.addEventListener('change', (e) => selectScanner(e.target.value));
 
         // Auto-connect on page load
-        log('Test page loaded. Auto-connecting to WS service...');
+        log('测试页已加载，正在自动连接 WS 服务...');
         setTimeout(() => connect(), 500);
     </script>
 </body>

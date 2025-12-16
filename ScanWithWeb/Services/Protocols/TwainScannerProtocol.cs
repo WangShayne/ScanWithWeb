@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using ScanWithWeb.Models;
 using NTwain;
 using NTwain.Data;
+using System.Text.Json;
 
 namespace ScanWithWeb.Services.Protocols;
 
@@ -20,6 +21,8 @@ public class TwainScannerProtocol : BaseScannerProtocol
     private string? _currentRequestId;
     private readonly object _scanStateLock = new();
     private bool _scanTerminated;
+    private Duplex? _duplexModeOverride;
+    private bool? _autoFeedOverride;
 
     // Cache DataSource objects by ID for later selection
     // This helps handle scanners with empty names that get populated later
@@ -41,7 +44,7 @@ public class TwainScannerProtocol : BaseScannerProtocol
             // Create TWIdentity manually to avoid issues with single-file publish
             var appId = TWIdentity.Create(
                 DataGroups.Image,
-                new Version(3, 0, 5),
+                new Version(3, 0, 6),
                 "ScanWithWeb Team",
                 "ScanWithWeb",
                 "ScanWithWeb Service",
@@ -456,7 +459,7 @@ public class TwainScannerProtocol : BaseScannerProtocol
             if (src.Capabilities.CapDuplex.IsSupported)
             {
                 var supported = src.Capabilities.CapDuplex.GetValues().ToList();
-                var desired = settings.Duplex ? Duplex.OnePass : Duplex.None;
+                var desired = _duplexModeOverride ?? (settings.Duplex ? Duplex.OnePass : Duplex.None);
 
                 Logger.LogDebug("[TWAIN] Duplex mode requested: {Desired}, Supported: {Supported}",
                     desired, string.Join(", ", supported));
@@ -496,16 +499,30 @@ public class TwainScannerProtocol : BaseScannerProtocol
 
                 if (settings.UseAdf && src.Capabilities.CapAutoFeed.IsSupported)
                 {
-                    var autoRc = src.Capabilities.CapAutoFeed.SetValue(BoolType.True);
-                    Logger.LogInformation("[TWAIN] AutoFeed enabled, Result: {Result}", autoRc);
+                    var desiredAutoFeed = _autoFeedOverride ?? true;
+                    var autoRc = src.Capabilities.CapAutoFeed.SetValue(desiredAutoFeed ? BoolType.True : BoolType.False);
+                    Logger.LogInformation("[TWAIN] AutoFeed set to {AutoFeed}, Result: {Result}", desiredAutoFeed, autoRc);
                 }
             }
 
             // Set maximum pages
             if (src.Capabilities.CapXferCount.IsSupported)
             {
-                var rc = src.Capabilities.CapXferCount.SetValue(settings.MaxPages);
-                Logger.LogInformation("[TWAIN] Max pages set to {MaxPages}, Result: {Result}", settings.MaxPages, rc);
+                // When showing the vendor TWAIN UI, some drivers (including Canon) can lock their UI controls
+                // based on the app-set CapXferCount (often showing single-page only). In that mode, let the
+                // scanner UI control transfer count unless the caller explicitly wants to limit it.
+                //
+                // The test page "continuous scan" mode intentionally sets MaxPages=1 for each continuation
+                // request, so we still honor MaxPages when ShowUI=false (headless mode).
+                if (settings.ShowUI)
+                {
+                    Logger.LogInformation("[TWAIN] Skipping CapXferCount because ShowUI=true (MaxPages={MaxPages})", settings.MaxPages);
+                }
+                else
+                {
+                    var rc = src.Capabilities.CapXferCount.SetValue(settings.MaxPages);
+                    Logger.LogInformation("[TWAIN] Max pages set to {MaxPages}, Result: {Result}", settings.MaxPages, rc);
+                }
             }
         }
         catch (Exception ex)
@@ -814,6 +831,218 @@ public class TwainScannerProtocol : BaseScannerProtocol
                 Logger.LogDebug(ex2, "[TWAIN] ForceStepDown(3) failed (Reason={Reason})", reason);
             }
         }
+    }
+
+    public List<DeviceCapability> GetAdvancedCapabilities()
+    {
+        var list = new List<DeviceCapability>();
+        if (_twain?.CurrentSource == null)
+        {
+            return list;
+        }
+
+        var src = _twain.CurrentSource;
+
+        // Duplex mode (TWAIN only)
+        try
+        {
+            if (src.Capabilities.CapDuplex.IsSupported)
+            {
+                var supported = src.Capabilities.CapDuplex.GetValues().Select(v => v.ToString()).Distinct().ToList();
+                Duplex? current = null;
+                try
+                {
+                    current = src.Capabilities.CapDuplex.GetCurrent();
+                }
+                catch
+                {
+                    // ignore if driver doesn't support GetCurrent
+                }
+
+                list.Add(new DeviceCapability
+                {
+                    Key = "twain.duplexMode",
+                    Label = "双面模式（TWAIN）",
+                    Description = "实验项：部分驱动在 TwoPass 模式下会先出所有正面再出所有反面。",
+                    Type = "enum",
+                    IsReadable = true,
+                    IsWritable = src.Capabilities.CapDuplex is ICapWrapper<Duplex> && !src.Capabilities.CapDuplex.IsReadOnly,
+                    Experimental = true,
+                    SupportedValues = supported.Prepend("Auto").Distinct().ToList(),
+                    CurrentValue = _duplexModeOverride?.ToString() ?? current?.ToString() ?? "Auto"
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "[TWAIN] Failed to enumerate CapDuplex");
+        }
+
+        // AutoFeed override
+        try
+        {
+            if (src.Capabilities.CapAutoFeed.IsSupported)
+            {
+                BoolType? current = null;
+                try
+                {
+                    current = src.Capabilities.CapAutoFeed.GetCurrent();
+                }
+                catch
+                {
+                    // ignore if driver doesn't support GetCurrent
+                }
+
+                list.Add(new DeviceCapability
+                {
+                    Key = "twain.autoFeed",
+                    Label = "自动进纸（AutoFeed）",
+                    Description = "实验项：仅在使用 ADF 时生效。",
+                    Type = "enum",
+                    IsReadable = true,
+                    IsWritable = src.Capabilities.CapAutoFeed.CanSet && !src.Capabilities.CapAutoFeed.IsReadOnly,
+                    Experimental = true,
+                    SupportedValues = new List<string> { "Auto", "True", "False" },
+                    CurrentValue = _autoFeedOverride.HasValue
+                        ? (_autoFeedOverride.Value ? "True" : "False")
+                        : (current.HasValue ? (current.Value == BoolType.True ? "True" : "False") : "Auto")
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "[TWAIN] Failed to enumerate CapAutoFeed");
+        }
+
+        // UI controllable (read-only informational)
+        try
+        {
+            if (src.Capabilities.CapUIControllable.IsSupported)
+            {
+                BoolType? current = null;
+                try
+                {
+                    current = src.Capabilities.CapUIControllable.GetCurrent();
+                }
+                catch { }
+
+                list.Add(new DeviceCapability
+                {
+                    Key = "twain.uiControllable",
+                    Label = "驱动界面可控（CapUIControllable）",
+                    Description = "只读信息：为 True 时通常可在 showUI=false 进行无界面扫描。",
+                    Type = "bool",
+                    IsReadable = true,
+                    IsWritable = false,
+                    Experimental = true,
+                    CurrentValue = current == BoolType.True
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "[TWAIN] Failed to read CapUIControllable");
+        }
+
+        return list;
+    }
+
+    public bool TryApplyAdvancedSetting(string key, JsonElement value, out string message)
+    {
+        message = string.Empty;
+
+        if (_twain?.CurrentSource == null)
+        {
+            message = "未选择扫描仪";
+            return false;
+        }
+
+        if (IsScanning)
+        {
+            message = "正在扫描中，无法应用设置";
+            return false;
+        }
+
+        var src = _twain.CurrentSource;
+
+        if (string.Equals(key, "twain.duplexMode", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!src.Capabilities.CapDuplex.IsSupported || src.Capabilities.CapDuplex.IsReadOnly || src.Capabilities.CapDuplex is not ICapWrapper<Duplex> wrapper)
+            {
+                message = "CapDuplex 不支持或不可写";
+                return false;
+            }
+
+            var str = value.ValueKind == JsonValueKind.String ? value.GetString() : value.ToString();
+            if (string.Equals(str, "Auto", StringComparison.OrdinalIgnoreCase))
+            {
+                _duplexModeOverride = null;
+                message = "已恢复为自动";
+                return true;
+            }
+
+            if (!Enum.TryParse<Duplex>(str, true, out var mode))
+            {
+                message = $"无效值：{str}";
+                return false;
+            }
+
+            var supported = src.Capabilities.CapDuplex.GetValues().ToList();
+            if (!supported.Contains(mode))
+            {
+                message = $"不支持的双面模式：{mode}";
+                return false;
+            }
+
+            var rc = wrapper.SetValue(mode);
+            _duplexModeOverride = mode;
+            message = $"已设置为 {mode}（{rc}）";
+            return rc == ReturnCode.Success;
+        }
+
+        if (string.Equals(key, "twain.autoFeed", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!src.Capabilities.CapAutoFeed.IsSupported || src.Capabilities.CapAutoFeed.IsReadOnly)
+            {
+                message = "CapAutoFeed 不支持或不可写";
+                return false;
+            }
+
+            var str = value.ValueKind == JsonValueKind.String ? value.GetString() : value.ToString();
+            if (string.Equals(str, "Auto", StringComparison.OrdinalIgnoreCase))
+            {
+                _autoFeedOverride = null;
+                message = "已恢复为自动";
+                return true;
+            }
+
+            bool desired;
+            if (value.ValueKind == JsonValueKind.True || value.ValueKind == JsonValueKind.False)
+            {
+                desired = value.GetBoolean();
+            }
+            else if (string.Equals(str, "True", StringComparison.OrdinalIgnoreCase))
+            {
+                desired = true;
+            }
+            else if (string.Equals(str, "False", StringComparison.OrdinalIgnoreCase))
+            {
+                desired = false;
+            }
+            else
+            {
+                message = $"无效值：{str}";
+                return false;
+            }
+
+            var rc = src.Capabilities.CapAutoFeed.SetValue(desired ? BoolType.True : BoolType.False);
+            _autoFeedOverride = desired;
+            message = $"已设置为 {desired}（{rc}）";
+            return rc == ReturnCode.Success;
+        }
+
+        message = "未知的高级能力";
+        return false;
     }
 
     public override void Shutdown()
