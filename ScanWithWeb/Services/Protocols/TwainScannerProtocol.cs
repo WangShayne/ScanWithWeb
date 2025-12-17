@@ -44,7 +44,7 @@ public class TwainScannerProtocol : BaseScannerProtocol
             // Create TWIdentity manually to avoid issues with single-file publish
             var appId = TWIdentity.Create(
                 DataGroups.Image,
-                new Version(3, 0, 7),
+                new Version(3, 0, 8),
                 "ScanWithWeb Team",
                 "ScanWithWeb",
                 "ScanWithWeb Service",
@@ -384,6 +384,31 @@ public class TwainScannerProtocol : BaseScannerProtocol
 
         try
         {
+            // Some TWAIN drivers expose different capability sets depending on the selected input source.
+            // To better match vendor UIs (e.g. selecting "Feeder" first), we apply feeder/source-related
+            // settings before duplex mode selection.
+            //
+            // Also: SDK exposes `settings.source`, but the server-side protocol historically only used
+            // `useAdf`. Treat common source values as an alias so "feeder" can be selected from the web.
+            if (!string.IsNullOrWhiteSpace(settings.Source))
+            {
+                var s = settings.Source.Trim();
+                if (s.Equals("feeder", StringComparison.OrdinalIgnoreCase) ||
+                    s.Equals("adf", StringComparison.OrdinalIgnoreCase) ||
+                    s.Contains("feeder", StringComparison.OrdinalIgnoreCase) ||
+                    s.Contains("adf", StringComparison.OrdinalIgnoreCase))
+                {
+                    settings.UseAdf = true;
+                }
+                else if (s.Equals("platen", StringComparison.OrdinalIgnoreCase) ||
+                         s.Equals("flatbed", StringComparison.OrdinalIgnoreCase) ||
+                         s.Contains("platen", StringComparison.OrdinalIgnoreCase) ||
+                         s.Contains("flatbed", StringComparison.OrdinalIgnoreCase))
+                {
+                    settings.UseAdf = false;
+                }
+            }
+
             Logger.LogInformation(
                 "[TWAIN] Applying settings: dpi={Dpi}, pixelType={PixelType}, paperSize={PaperSize}, useAdf={UseAdf}, duplex={Duplex}, showUI={ShowUI}, continuousScan={ContinuousScan}, maxPages={MaxPages}",
                 settings.Dpi,
@@ -446,6 +471,21 @@ public class TwainScannerProtocol : BaseScannerProtocol
                 }
             }
 
+            // Enable/disable ADF BEFORE duplex selection.
+            // Many drivers only offer OnePass duplex when the input source is the feeder.
+            if (src.Capabilities.CapFeederEnabled.IsSupported)
+            {
+                var rc = src.Capabilities.CapFeederEnabled.SetValue(settings.UseAdf ? BoolType.True : BoolType.False);
+                Logger.LogInformation("[TWAIN] ADF enabled set to {UseAdf}, Result: {Result}", settings.UseAdf, rc);
+
+                if (settings.UseAdf && src.Capabilities.CapAutoFeed.IsSupported)
+                {
+                    var desiredAutoFeed = _autoFeedOverride ?? true;
+                    var autoRc = src.Capabilities.CapAutoFeed.SetValue(desiredAutoFeed ? BoolType.True : BoolType.False);
+                    Logger.LogInformation("[TWAIN] AutoFeed set to {AutoFeed}, Result: {Result}", desiredAutoFeed, autoRc);
+                }
+            }
+
             // Set duplex
             if (src.Capabilities.CapDuplexEnabled.IsSupported)
             {
@@ -488,20 +528,6 @@ public class TwainScannerProtocol : BaseScannerProtocol
                     {
                         Logger.LogWarning("[TWAIN] Duplex capability is read-only; cannot set duplex mode to {Mode}", Duplex.TwoPass);
                     }
-                }
-            }
-
-            // Enable/disable ADF
-            if (src.Capabilities.CapFeederEnabled.IsSupported)
-            {
-                var rc = src.Capabilities.CapFeederEnabled.SetValue(settings.UseAdf ? BoolType.True : BoolType.False);
-                Logger.LogInformation("[TWAIN] ADF enabled set to {UseAdf}, Result: {Result}", settings.UseAdf, rc);
-
-                if (settings.UseAdf && src.Capabilities.CapAutoFeed.IsSupported)
-                {
-                    var desiredAutoFeed = _autoFeedOverride ?? true;
-                    var autoRc = src.Capabilities.CapAutoFeed.SetValue(desiredAutoFeed ? BoolType.True : BoolType.False);
-                    Logger.LogInformation("[TWAIN] AutoFeed set to {AutoFeed}, Result: {Result}", desiredAutoFeed, autoRc);
                 }
             }
 
@@ -719,6 +745,9 @@ public class TwainScannerProtocol : BaseScannerProtocol
             IsScanning = false;
             _currentRequestId = null;
             _currentPageNumber = 0;
+            // In terminated scenarios (stop/error/cancel), proactively step down and reopen the source
+            // so the next scan doesn't require a full service restart.
+            TryDisableAndStepDown("SourceDisabled:Terminated");
             return;
         }
 
@@ -806,9 +835,12 @@ public class TwainScannerProtocol : BaseScannerProtocol
 
     private void TryDisableAndStepDown(string reason)
     {
+        if (_twain == null) return;
+
+        var stateBefore = _twain.State;
         try
         {
-            if (_twain != null && _twain.State > 4)
+            if (_twain.State > 4)
             {
                 Logger.LogDebug("[TWAIN] ForceStepDown to source-open state due to: {Reason} (State={State})", reason, _twain.State);
                 _twain.ForceStepDown(4);
@@ -820,7 +852,7 @@ public class TwainScannerProtocol : BaseScannerProtocol
             Logger.LogDebug(ex, "[TWAIN] ForceStepDown(4) failed (Reason={Reason})", reason);
             try
             {
-                if (_twain != null && _twain.State > 3)
+                if (_twain.State > 3)
                 {
                     _twain.ForceStepDown(3);
                     Logger.LogDebug("[TWAIN] ForceStepDown(3) complete (State={State})", _twain.State);
@@ -831,6 +863,41 @@ public class TwainScannerProtocol : BaseScannerProtocol
                 Logger.LogDebug(ex2, "[TWAIN] ForceStepDown(3) failed (Reason={Reason})", reason);
             }
         }
+
+        // Some drivers remain "poisoned" after feeder errors/cancel even if we stepped down.
+        // Best-effort: close and re-open the selected source to restore normal operation.
+        try
+        {
+            if (_twain.State == 4)
+            {
+                Logger.LogDebug("[TWAIN] Closing current source to recover (Reason={Reason})", reason);
+                _twain.CurrentSource?.Close();
+                Logger.LogDebug("[TWAIN] Current source closed (State={State})", _twain.State);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "[TWAIN] Failed to close current source during recovery (Reason={Reason})", reason);
+        }
+
+        try
+        {
+            // Re-open the last selected scanner so subsequent scans can start immediately.
+            if (_twain.State == 3 && !string.IsNullOrWhiteSpace(CurrentScannerId))
+            {
+                Logger.LogDebug("[TWAIN] Re-opening selected scanner after recovery (Reason={Reason}, ScannerId={ScannerId})",
+                    reason, CurrentScannerId);
+                SelectScanner(CurrentScannerId);
+                Logger.LogDebug("[TWAIN] Re-open attempt complete (State={State})", _twain.State);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "[TWAIN] Failed to re-open selected scanner during recovery (Reason={Reason})", reason);
+        }
+
+        Logger.LogDebug("[TWAIN] Recovery step-down done (Reason={Reason}, StateBefore={Before}, StateAfter={After})",
+            reason, stateBefore, _twain.State);
     }
 
     public List<DeviceCapability> GetAdvancedCapabilities()

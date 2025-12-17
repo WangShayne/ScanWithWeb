@@ -148,7 +148,7 @@ public partial class MainForm : Form
 
         _versionLabel = new Label
         {
-            Text = $"v3.0.7 ({bits})",
+            Text = $"v3.0.8 ({bits})",
             Font = new Font("Segoe UI", 10F),
             ForeColor = Color.FromArgb(108, 117, 125),
             AutoSize = true,
@@ -191,8 +191,8 @@ public partial class MainForm : Form
         var btnTestPage = CreateHeaderButton("Test Page", _primaryColor);
         btnTestPage.Click += (s, e) => OpenTestPage();
 
-        var btnScanner = CreateHeaderButton("Scanner", _successColor);
-        btnScanner.Click += (s, e) => OpenScannerSettings();
+        var btnScanner = CreateHeaderButton("ShowUI", _successColor);
+        btnScanner.Click += async (s, e) => await OpenShowUIAsync();
 
         _headerPanel.Controls.Add(_titleLabel);
         _headerPanel.Controls.Add(_versionLabel);
@@ -874,6 +874,106 @@ public partial class MainForm : Form
             MessageBox.Show(
                 $"Failed to open scanner settings:\n{ex.Message}",
                 "Scanner Settings",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
+    }
+
+    private bool EnsureScannerSelectedForUi()
+    {
+        if (_scannerManager == null) return false;
+
+        if (!string.IsNullOrWhiteSpace(_scannerManager.CurrentScannerId))
+            return true;
+
+        try
+        {
+            // Try to auto-select the persisted default scanner (if any).
+            var prefs = UserPreferences.Load(_logger);
+            if (!string.IsNullOrWhiteSpace(prefs.DefaultScannerId))
+            {
+                if (_scannerManager.SelectScanner(prefs.DefaultScannerId))
+                {
+                    _logger.LogInformation("Auto-selected default scanner for ShowUI: {Id}", prefs.DefaultScannerId);
+                    return true;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to auto-select default scanner for ShowUI");
+        }
+
+        var result = MessageBox.Show(
+            "No scanner is currently selected.\n\nOpen Scanner Settings to select one now?",
+            "ShowUI",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Information);
+
+        if (result == DialogResult.Yes)
+        {
+            OpenScannerSettings();
+            return !string.IsNullOrWhiteSpace(_scannerManager.CurrentScannerId);
+        }
+
+        return false;
+    }
+
+    private async Task OpenShowUIAsync()
+    {
+        try
+        {
+            if (_scannerManager == null)
+            {
+                MessageBox.Show(
+                    "Scanner Manager is not available in this build.\n\nUse the Test Page to interact with scanners.",
+                    "ShowUI",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return;
+            }
+
+            if (_scannerManager.IsScanning)
+            {
+                MessageBox.Show(
+                    "A scan is already in progress.\n\nStop the current scan before opening the driver UI.",
+                    "ShowUI",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
+            if (!EnsureScannerSelectedForUi())
+                return;
+
+            // Force vendor driver UI for this one-off "configure" run.
+            var settings = _scannerManager.CurrentSettings;
+            settings.ShowUI = true;
+
+            // Safety: if unlimited, default to a single transfer so users don't accidentally scan an entire stack
+            // when they only want to open the UI to adjust settings.
+            if (settings.MaxPages <= 0)
+                settings.MaxPages = 1;
+
+            _scannerManager.ApplySettings(settings);
+
+            var requestId = Guid.NewGuid().ToString("N");
+            var ok = await _scannerManager.StartScanAsync(requestId);
+            if (!ok)
+            {
+                MessageBox.Show(
+                    "Failed to open the scanner driver UI.\n\nIf your TWAIN driver requires UI, ensure it supports ShowUI mode and try again.",
+                    "ShowUI",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to open ShowUI");
+            MessageBox.Show(
+                $"Failed to open scanner driver UI:\n{ex.Message}",
+                "ShowUI",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
         }

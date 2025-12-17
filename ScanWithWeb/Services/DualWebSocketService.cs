@@ -19,6 +19,10 @@ public class DualWebSocketService : IDisposable
     private readonly ScannerManager? _scannerManager;
     private readonly CertificateManager _certificateManager;
 
+    private readonly object _deviceCapsLock = new();
+    private DeviceCapabilitiesResponse? _cachedDeviceCapabilities;
+    private DateTime _cachedDeviceCapabilitiesAtUtc;
+
     private WebSocketServer? _wssServer;
     private WebSocketServer? _wsServer;
 
@@ -77,6 +81,20 @@ public class DualWebSocketService : IDisposable
         StartWssServer();
 
         LogConnectionInfo();
+
+        // Warm the device-capabilities cache on startup (best-effort).
+        // Capabilities depend on having a selected scanner; we try to auto-select the saved default scanner.
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await RefreshDeviceCapabilitiesCacheAsync(broadcastToClients: false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Failed to warm device capabilities cache on startup");
+            }
+        });
     }
 
     private void StartWsServer()
@@ -292,6 +310,13 @@ public class DualWebSocketService : IDisposable
         };
 
         await SendResponse(socket, response);
+
+        // Proactively push device capabilities after authentication so web clients can render settings
+        // without issuing an explicit get_device_capabilities request.
+        if (_scannerManager != null)
+        {
+            await TrySendDeviceCapabilitiesToSocketAsync(socket);
+        }
     }
 
     private async Task HandlePing(IWebSocketConnection socket, ScanRequest request)
@@ -369,6 +394,13 @@ public class DualWebSocketService : IDisposable
                 Message = $"Scanner '{scannerName}' selected"
             };
             await SendResponse(socket, response);
+
+            // After selecting a scanner, push capabilities immediately so the web can update its UI.
+            if (_scannerManager != null)
+            {
+                await RefreshDeviceCapabilitiesCacheAsync(broadcastToClients: false);
+                await TrySendDeviceCapabilitiesToSocketAsync(socket);
+            }
         }
         else
         {
@@ -703,6 +735,10 @@ public class DualWebSocketService : IDisposable
         };
 
         await SendResponse(socket, response);
+
+        // Settings updates can change "currentValue" readings; refresh and push updated capabilities.
+        await RefreshDeviceCapabilitiesCacheAsync(broadcastToClients: false);
+        await TrySendDeviceCapabilitiesToSocketAsync(socket);
     }
 
     private Task HandleLegacyWakeUp(IWebSocketConnection socket)
@@ -719,6 +755,119 @@ public class DualWebSocketService : IDisposable
         // Trigger UI wake-up event
         MessageReceived?.Invoke(this, new MessageReceivedEventArgs(socket, ProtocolActions.LegacyWakeUp));
         return Task.CompletedTask;
+    }
+
+    private bool EnsureDefaultScannerSelectedIfNeeded()
+    {
+        if (_scannerManager == null) return false;
+
+        if (!string.IsNullOrWhiteSpace(_scannerManager.CurrentScannerId))
+            return true;
+
+        try
+        {
+            var prefs = UserPreferences.Load(_logger);
+            if (string.IsNullOrWhiteSpace(prefs.DefaultScannerId))
+                return false;
+
+            var ok = _scannerManager.SelectScanner(prefs.DefaultScannerId);
+            if (ok)
+            {
+                _logger.LogInformation("Auto-selected default scanner: {Id}", prefs.DefaultScannerId);
+                return true;
+            }
+
+            _logger.LogWarning("Failed to auto-select default scanner: {Id}", prefs.DefaultScannerId);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to load/auto-select default scanner");
+            return false;
+        }
+    }
+
+    private async Task RefreshDeviceCapabilitiesCacheAsync(bool broadcastToClients)
+    {
+        if (_scannerManager == null) return;
+
+        EnsureDefaultScannerSelectedIfNeeded();
+
+        var (scannerId, protocol, capabilities) = await _scannerManager.GetDeviceCapabilitiesAsync();
+        if (scannerId == null || protocol == null)
+        {
+            // No scanner selected yet; nothing to cache.
+            return;
+        }
+
+        var response = new DeviceCapabilitiesResponse
+        {
+            Action = ProtocolActions.GetDeviceCapabilities,
+            RequestId = Guid.NewGuid().ToString("N"),
+            ScannerId = scannerId,
+            Protocol = protocol,
+            Capabilities = capabilities
+        };
+
+        lock (_deviceCapsLock)
+        {
+            _cachedDeviceCapabilities = response;
+            _cachedDeviceCapabilitiesAtUtc = DateTime.UtcNow;
+        }
+
+        if (!broadcastToClients) return;
+
+        foreach (var s in _sessionManager.GetActiveSessions())
+        {
+            if (s.Socket == null || !s.Socket.IsAvailable) continue;
+            await SendResponse(s.Socket, new DeviceCapabilitiesResponse
+            {
+                Action = ProtocolActions.GetDeviceCapabilities,
+                RequestId = Guid.NewGuid().ToString("N"),
+                ScannerId = response.ScannerId,
+                Protocol = response.Protocol,
+                Capabilities = response.Capabilities
+            });
+        }
+    }
+
+    private async Task TrySendDeviceCapabilitiesToSocketAsync(IWebSocketConnection socket)
+    {
+        if (_scannerManager == null) return;
+
+        DeviceCapabilitiesResponse? cached;
+        DateTime cachedAt;
+        lock (_deviceCapsLock)
+        {
+            cached = _cachedDeviceCapabilities;
+            cachedAt = _cachedDeviceCapabilitiesAtUtc;
+        }
+
+        if (cached == null)
+        {
+            await RefreshDeviceCapabilitiesCacheAsync(broadcastToClients: false);
+            lock (_deviceCapsLock)
+            {
+                cached = _cachedDeviceCapabilities;
+                cachedAt = _cachedDeviceCapabilitiesAtUtc;
+            }
+        }
+
+        if (cached == null) return;
+
+        await SendResponse(socket, new DeviceCapabilitiesResponse
+        {
+            Action = ProtocolActions.GetDeviceCapabilities,
+            RequestId = Guid.NewGuid().ToString("N"),
+            ScannerId = cached.ScannerId,
+            Protocol = cached.Protocol,
+            Capabilities = cached.Capabilities
+        });
+
+        _logger.LogDebug(
+            "Pushed device capabilities to socket {SocketId} (cacheAgeMs={AgeMs:n0})",
+            socket.ConnectionInfo.Id,
+            (DateTime.UtcNow - cachedAt).TotalMilliseconds);
     }
 
     #endregion
