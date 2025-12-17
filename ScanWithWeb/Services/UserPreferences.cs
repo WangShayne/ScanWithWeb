@@ -5,7 +5,6 @@ namespace ScanWithWeb.Services;
 
 internal sealed class UserPreferences
 {
-    public string? DefaultPrinter { get; set; }
     public string? DefaultScannerId { get; set; }
     public string? DefaultScannerProtocol { get; set; }
 

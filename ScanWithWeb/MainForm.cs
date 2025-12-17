@@ -148,7 +148,7 @@ public partial class MainForm : Form
 
         _versionLabel = new Label
         {
-            Text = $"v3.0.6 ({bits})",
+            Text = $"v3.0.7 ({bits})",
             Font = new Font("Segoe UI", 10F),
             ForeColor = Color.FromArgb(108, 117, 125),
             AutoSize = true,
@@ -159,7 +159,9 @@ public partial class MainForm : Form
         var actionsPanel = new FlowLayoutPanel
         {
             Dock = DockStyle.Right,
-            FlowDirection = FlowDirection.LeftToRight,
+            // Right-to-left prevents the left-most button from being clipped on smaller widths / high DPI scaling.
+            // We want the most important actions to remain visible (e.g., Test Page).
+            FlowDirection = FlowDirection.RightToLeft,
             WrapContents = false,
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
@@ -179,7 +181,7 @@ public partial class MainForm : Form
                 ForeColor = Color.White,
                 Cursor = Cursors.Hand,
                 TextAlign = ContentAlignment.MiddleCenter,
-                Margin = new Padding(8, 0, 0, 0),
+                Margin = new Padding(0, 0, 8, 0),
                 Padding = new Padding(0)
             };
             btn.FlatAppearance.BorderSize = 0;
@@ -192,14 +194,11 @@ public partial class MainForm : Form
         var btnScanner = CreateHeaderButton("Scanner", _successColor);
         btnScanner.Click += (s, e) => OpenScannerSettings();
 
-        var btnPrinter = CreateHeaderButton("Printer", _warningColor);
-        btnPrinter.Click += (s, e) => OpenPrinterSettings();
-
         _headerPanel.Controls.Add(_titleLabel);
         _headerPanel.Controls.Add(_versionLabel);
+        // With RightToLeft flow, add in priority order (highest priority first) so it stays visible if clipped.
         actionsPanel.Controls.Add(btnTestPage);
         actionsPanel.Controls.Add(btnScanner);
-        actionsPanel.Controls.Add(btnPrinter);
         _headerPanel.Controls.Add(actionsPanel);
     }
 
@@ -397,7 +396,6 @@ public partial class MainForm : Form
         _trayMenu.Items.Add("Open Dashboard", null, (s, e) => ShowWindow());
         _trayMenu.Items.Add("Test Page", null, (s, e) => OpenTestPage());
         _trayMenu.Items.Add("Scanner Settings", null, (s, e) => OpenScannerSettings());
-        _trayMenu.Items.Add("Printer Settings", null, (s, e) => OpenPrinterSettings());
         _trayMenu.Items.Add("-");
         _trayMenu.Items.Add("Exit", null, (s, e) => ExitApplication());
 
@@ -844,28 +842,6 @@ public partial class MainForm : Form
             MessageBox.Show(
                 $"Failed to open test page:\n{ex.Message}",
                 "Error",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Error);
-        }
-    }
-
-    private void OpenPrinterSettings()
-    {
-        try
-        {
-            using var form = new PrinterSettingsForm(_logger);
-            var result = form.ShowDialog(this);
-            if (result == DialogResult.OK)
-            {
-                ShowNotification("Printer Settings", "Printer preference saved");
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to open printer settings");
-            MessageBox.Show(
-                $"Failed to open printer settings:\n{ex.Message}",
-                "Printer Settings",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
         }

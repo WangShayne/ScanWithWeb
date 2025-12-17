@@ -135,7 +135,7 @@ public sealed class ScannerSettingsForm : Form
 
         var title = new Label
         {
-            Text = "Select a scanner. Note: TWAIN scanners are not printers, so they won't appear in the Printer dialog.",
+            Text = "Select a scanner device to use by default for the service.",
             AutoSize = true,
             ForeColor = Color.FromArgb(60, 60, 60),
             Margin = new Padding(0, 0, 0, 10),

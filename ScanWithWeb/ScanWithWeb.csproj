@@ -10,14 +10,34 @@
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <AssemblyName>ScanWithWeb</AssemblyName>
     <RootNamespace>ScanWithWeb</RootNamespace>
-    <Version>3.0.6</Version>
+    <Version>3.0.7</Version>
     <Authors>ScanWithWeb Team</Authors>
     <Description>Web-enabled scanner service with secure WebSocket support</Description>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
     <Platforms>AnyCPU;x86;x64</Platforms>
-    <!-- RuntimeIdentifier removed to support multi-platform builds -->
-    <!-- Use: dotnet publish -r win-x64 or dotnet publish -r win-x86 -->
+
+    <!--
+      Fix VS x86 startup:
+      When SelfContained=true and RuntimeIdentifier is not set, the SDK infers the host RID (e.g. win-x64).
+      That inference conflicts with PlatformTarget=x86 and Visual Studio fails with:
+        "RuntimeIdentifier 平台“win-x64”和 PlatformTarget“x86”必须兼容。"
+
+      We set a compatible default RID per platform, while still allowing `-r` to override it.
+    -->
+    <RuntimeIdentifiers>win-x64;win-x86</RuntimeIdentifiers>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' == '' and ('$(Platform)' == 'x86' or '$(PlatformTarget)' == 'x86')">
+    <RuntimeIdentifier>win-x86</RuntimeIdentifier>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' == '' and ('$(Platform)' == 'x64' or '$(PlatformTarget)' == 'x64')">
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' == '' and ('$(Platform)' == 'Any CPU' or '$(Platform)' == 'AnyCPU' or '$(PlatformTarget)' == 'AnyCPU')">
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
   </PropertyGroup>
 
   <ItemGroup>
