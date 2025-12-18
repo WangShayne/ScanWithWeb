@@ -44,7 +44,7 @@ public class TwainScannerProtocol : BaseScannerProtocol
             // Create TWIdentity manually to avoid issues with single-file publish
             var appId = TWIdentity.Create(
                 DataGroups.Image,
-                new Version(3, 0, 8),
+                new Version(3, 0, 9),
                 "ScanWithWeb Team",
                 "ScanWithWeb",
                 "ScanWithWeb Service",
@@ -353,8 +353,37 @@ public class TwainScannerProtocol : BaseScannerProtocol
                     .ToList();
             }
 
-            // Duplex support
-            caps.SupportsDuplex = src.Capabilities.CapDuplexEnabled.IsSupported;
+            // Duplex support:
+            // Many drivers expose duplex capabilities but don't allow programmatic toggling (read-only).
+            // For the web UI, treat "supportsDuplex" as "duplex can be controlled via API".
+            var duplexControllable = false;
+            try
+            {
+                var cap = src.Capabilities.CapDuplexEnabled;
+                duplexControllable = cap.IsSupported && cap.CanSet && !cap.IsReadOnly;
+            }
+            catch
+            {
+                // Some drivers/cap wrappers may throw on CanSet/IsReadOnly; ignore and fall back.
+            }
+
+            try
+            {
+                // Some drivers only respect CapDuplex (mode) rather than CapDuplexEnabled.
+                if (!duplexControllable &&
+                    src.Capabilities.CapDuplex.IsSupported &&
+                    src.Capabilities.CapDuplex is ICapWrapper<Duplex> &&
+                    !src.Capabilities.CapDuplex.IsReadOnly)
+                {
+                    duplexControllable = true;
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            caps.SupportsDuplex = duplexControllable;
 
             // ADF support
             caps.SupportsAdf = src.Capabilities.CapFeederEnabled.IsSupported;
@@ -491,6 +520,10 @@ public class TwainScannerProtocol : BaseScannerProtocol
             {
                 var rc = src.Capabilities.CapDuplexEnabled.SetValue(settings.Duplex ? BoolType.True : BoolType.False);
                 Logger.LogInformation("[TWAIN] Duplex enabled set to {Duplex}, Result: {Result}", settings.Duplex, rc);
+                if (rc != ReturnCode.Success)
+                {
+                    Logger.LogWarning("[TWAIN] CapDuplexEnabled did not apply (Result={Result}). Driver may ignore duplex toggles.", rc);
+                }
             }
 
             // Prefer explicit duplex mode selection when available.
@@ -646,6 +679,7 @@ public class TwainScannerProtocol : BaseScannerProtocol
             try
             {
                 result = src.Enable(SourceEnableMode.ShowUI, false, _windowHandle);
+                Logger.LogDebug("[TWAIN] Source.Enable (ShowUI, non-modal) returned: {Result}", result);
             }
             catch (Exception enableEx)
             {
@@ -654,6 +688,7 @@ public class TwainScannerProtocol : BaseScannerProtocol
                 try
                 {
                     result = src.Enable(SourceEnableMode.ShowUI, true, _windowHandle);
+                    Logger.LogDebug("[TWAIN] Source.Enable (ShowUI, modal) returned: {Result}", result);
                 }
                 catch (Exception fallbackEx)
                 {
@@ -662,17 +697,30 @@ public class TwainScannerProtocol : BaseScannerProtocol
                 }
             }
 
+            // Some drivers return a failure code for non-modal UI but work in modal mode.
+            if (result != ReturnCode.Success)
+            {
+                Logger.LogWarning("[TWAIN] ShowUI non-modal returned {Result}; retrying with modal UI", result);
+                try
+                {
+                    result = src.Enable(SourceEnableMode.ShowUI, true, _windowHandle);
+                    Logger.LogDebug("[TWAIN] Source.Enable (ShowUI, modal retry) returned: {Result}", result);
+                }
+                catch (Exception modalRetryEx)
+                {
+                    Logger.LogError(modalRetryEx, "[TWAIN] ShowUI modal retry threw an exception");
+                }
+            }
+
             if (result == ReturnCode.Success)
             {
                 Logger.LogInformation("[TWAIN] Scan started successfully");
                 return true;
             }
-            else
-            {
-                Logger.LogWarning("[TWAIN] Failed to start scan: {Result}", result);
-                IsScanning = false;
-                return false;
-            }
+
+            Logger.LogWarning("[TWAIN] Failed to start scan: {Result}", result);
+            IsScanning = false;
+            return false;
         }
         catch (Exception ex)
         {

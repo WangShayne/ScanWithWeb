@@ -67,7 +67,7 @@ public class ScannerService : IDisposable
             // (Assembly.Location is empty in single-file mode)
             var appId = TWIdentity.Create(
                 DataGroups.Image,
-                new Version(3, 0, 8),
+                new Version(3, 0, 9),
                 "ScanWithWeb Team",
                 "ScanWithWeb",
                 "ScanWithWeb Service",
@@ -388,8 +388,19 @@ public class ScannerService : IDisposable
                     .ToList();
             }
 
-            // Duplex support
-            caps.SupportsDuplex = src.Capabilities.CapDuplexEnabled.IsSupported;
+            // Duplex support:
+            // For UI, treat "supportsDuplex" as "duplex can be controlled via API" (not just detected).
+            var duplexControllable = false;
+            try
+            {
+                var cap = src.Capabilities.CapDuplexEnabled;
+                duplexControllable = cap.IsSupported && cap.CanSet && !cap.IsReadOnly;
+            }
+            catch
+            {
+                // ignore
+            }
+            caps.SupportsDuplex = duplexControllable;
 
             // ADF (Automatic Document Feeder) support
             caps.SupportsAdf = src.Capabilities.CapFeederEnabled.IsSupported;

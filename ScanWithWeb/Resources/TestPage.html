@@ -650,6 +650,29 @@
             });
         }
 
+        // Get capabilities of the currently selected scanner (simple/stable API)
+        function getCapabilities() {
+            if (!token) return;
+            send({
+                action: 'get_capabilities',
+                token: token
+            });
+        }
+
+        function applyCapabilitiesToUi(caps) {
+            const useAdf = document.getElementById('useAdf');
+            const duplex = document.getElementById('duplex');
+
+            if (useAdf) {
+                useAdf.disabled = !(caps && caps.supportsAdf);
+                if (useAdf.disabled) useAdf.checked = false;
+            }
+            if (duplex) {
+                duplex.disabled = !(caps && caps.supportsDuplex);
+                if (duplex.disabled) duplex.checked = false;
+            }
+        }
+
         // Start scan
         function startScan() {
             if (!selectedScanner || !token) return;
@@ -723,10 +746,21 @@
                             log(`已选择扫描仪：${selectedScanner}`, 'success');
                             updateStatus(scannerStatus, scannerText, true, `扫描仪：${selectedScanner}`);
                             btnScan.disabled = false;
+                            getCapabilities();
                         } else {
                             log(`选择扫描仪失败：${msg.message || msg.status || '未知错误'}`, 'error');
                             updateStatus(scannerStatus, scannerText, false, '扫描仪：选择失败');
                             btnScan.disabled = true;
+                        }
+                        break;
+
+                    case 'get_capabilities':
+                        try {
+                            const caps = msg.scanners && msg.scanners[0] ? msg.scanners[0].capabilities : null;
+                            applyCapabilitiesToUi(caps);
+                            log(`设备能力：ADF=${!!(caps && caps.supportsAdf)}，Duplex=${!!(caps && caps.supportsDuplex)}`, 'info');
+                        } catch (e) {
+                            // ignore
                         }
                         break;
 
