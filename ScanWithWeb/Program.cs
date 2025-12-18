@@ -1,9 +1,11 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using ScanWithWeb.Interfaces;
 using ScanWithWeb.Services;
 using ScanWithWeb.Services.Protocols;
+using ScanWithWeb.Models;
 
 namespace ScanWithWeb;
 
@@ -130,6 +132,9 @@ internal static class Program
         // Configuration
         services.AddSingleton<IConfiguration>(configuration);
 
+        // Options
+        services.Configure<ImageRotationOptions>(configuration.GetSection("ImageRotation"));
+
         // Logging
         services.AddLogging(builder =>
         {
@@ -186,7 +191,8 @@ internal static class Program
         services.AddSingleton<TwainScannerProtocol>(sp =>
         {
             var logger = sp.GetRequiredService<ILogger<TwainScannerProtocol>>();
-            return new TwainScannerProtocol(logger);
+            var rotationOptions = sp.GetRequiredService<IOptions<ImageRotationOptions>>().Value;
+            return new TwainScannerProtocol(logger, rotationOptions);
         });
 
         services.AddSingleton<WiaScannerProtocol>(sp =>

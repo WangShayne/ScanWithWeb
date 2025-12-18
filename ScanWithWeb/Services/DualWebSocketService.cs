@@ -488,6 +488,60 @@ public class DualWebSocketService : IDisposable
 
         try
         {
+            // Auto-reselect scanner if the driver lost state after errors (paper jam / no media / cancel).
+            // This prevents forcing the user to call select_scanner again.
+            if (_scannerManager != null)
+            {
+                var desired = session.SelectedScanner;
+
+                if (!string.IsNullOrWhiteSpace(desired))
+                {
+                    if (!string.Equals(_scannerManager.CurrentScannerId, desired, StringComparison.OrdinalIgnoreCase))
+                    {
+                        _logger.LogInformation("Re-selecting scanner for scan request (Session={ClientId}, Scanner={Scanner})",
+                            session.ClientId, desired);
+                        _scannerManager.SelectScanner(desired);
+                    }
+                }
+                else if (string.IsNullOrWhiteSpace(_scannerManager.CurrentScannerId))
+                {
+                    // Best-effort: auto-select saved default / the only available scanner.
+                    try
+                    {
+                        var prefs = UserPreferences.Load(_logger);
+                        if (!string.IsNullOrWhiteSpace(prefs.DefaultScannerId))
+                        {
+                            _scannerManager.SelectScanner(prefs.DefaultScannerId);
+                            session.SelectedScanner = prefs.DefaultScannerId;
+                            _logger.LogInformation("Auto-selected default scanner for session {ClientId}: {Id}", session.ClientId, prefs.DefaultScannerId);
+                        }
+                        else
+                        {
+                            var scanners = await _scannerManager.GetAllScannersAsync();
+                            if (scanners.Count == 1)
+                            {
+                                _scannerManager.SelectScanner(scanners[0].Id);
+                                session.SelectedScanner = scanners[0].Id;
+                                _logger.LogInformation("Auto-selected only available scanner for session {ClientId}: {Id}", session.ClientId, scanners[0].Id);
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "Failed to auto-select scanner before scan");
+                    }
+                }
+            }
+            else
+            {
+                // Legacy single-protocol mode (TWAIN-only): use the session-selected scanner name if present.
+                if (!string.IsNullOrWhiteSpace(session.SelectedScanner) &&
+                    !string.Equals(_scannerService.CurrentScannerName, session.SelectedScanner, StringComparison.OrdinalIgnoreCase))
+                {
+                    _scannerService.SelectScanner(session.SelectedScanner);
+                }
+            }
+
             // Apply scan settings if provided
             if (request.Settings != null)
             {

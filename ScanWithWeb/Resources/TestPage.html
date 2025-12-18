@@ -829,11 +829,29 @@
                         const errorCode = msg.errorCode || '';
                         log(`错误：${errorMsg}（${errorCode}）`, 'error');
 
-                        // Handle scanner-related errors
-                        if (errorCode === 'SCANNER_NOT_FOUND' || errorMsg.toLowerCase().includes('scanner')) {
-                            updateStatus(scannerStatus, scannerText, false, '扫描仪：错误');
+                        // Only clear selection when the scanner truly cannot be found.
+                        // Paper jam / no media are recoverable: allow user to fix and click Scan again.
+                        if (errorCode === 'SCANNER_NOT_FOUND') {
+                            updateStatus(scannerStatus, scannerText, false, '扫描仪：未找到');
                             btnScan.disabled = true;
                             selectedScanner = null;
+                        } else {
+                            // Keep the selected scanner so the Scan button remains actionable.
+                            if (selectedScanner) {
+                                updateStatus(scannerStatus, scannerText, true, `扫描仪：${selectedScanner}（可重试）`);
+                                btnScan.disabled = false;
+
+                                // Best-effort: re-select to recover from driver state loss after jam/no media.
+                                // Server-side also tries to re-select before scanning.
+                                setTimeout(() => {
+                                    if (token && selectedScanner) {
+                                        log('尝试自动重新选择扫描仪...', 'info');
+                                        selectScanner(selectedScanner);
+                                    }
+                                }, 300);
+                            } else {
+                                updateStatus(scannerStatus, scannerText, false, '扫描仪：错误');
+                            }
                         }
 
                         // Show alert for hardware errors (paper jam, etc.)

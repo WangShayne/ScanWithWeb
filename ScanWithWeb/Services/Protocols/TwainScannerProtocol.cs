@@ -14,6 +14,7 @@ namespace ScanWithWeb.Services.Protocols;
 /// </summary>
 public class TwainScannerProtocol : BaseScannerProtocol
 {
+    private readonly ImageRotationOptions _rotationOptions;
     private TwainSession? _twain;
     private IntPtr _windowHandle;
     private bool _stopScan;
@@ -30,8 +31,9 @@ public class TwainScannerProtocol : BaseScannerProtocol
 
     public override string ProtocolName => "twain";
 
-    public TwainScannerProtocol(ILogger<TwainScannerProtocol> logger) : base(logger)
+    public TwainScannerProtocol(ILogger<TwainScannerProtocol> logger, ImageRotationOptions rotationOptions) : base(logger)
     {
+        _rotationOptions = rotationOptions ?? new ImageRotationOptions();
     }
 
     public override bool Initialize(IntPtr windowHandle)
@@ -44,7 +46,7 @@ public class TwainScannerProtocol : BaseScannerProtocol
             // Create TWIdentity manually to avoid issues with single-file publish
             var appId = TWIdentity.Create(
                 DataGroups.Image,
-                new Version(3, 0, 10),
+                new Version(3, 0, 11),
                 "ScanWithWeb Team",
                 "ScanWithWeb",
                 "ScanWithWeb Service",
@@ -115,7 +117,7 @@ public class TwainScannerProtocol : BaseScannerProtocol
 
         try
         {
-            var rotationDegrees = GetRequestedRotationDegrees();
+            var rotationDegrees = GetRequestedRotationDegrees(_currentPageNumber);
 
             if (e.NativeData != IntPtr.Zero)
             {
@@ -247,7 +249,7 @@ public class TwainScannerProtocol : BaseScannerProtocol
         }
     }
 
-    private int GetRequestedRotationDegrees()
+    private int GetRequestedRotationDegrees(int pageNumber)
     {
         var rot = CurrentSettings?.Rotation;
         if (rot == null || !rot.HasValue)
@@ -265,7 +267,27 @@ public class TwainScannerProtocol : BaseScannerProtocol
                 if (string.Equals(s, "auto", StringComparison.OrdinalIgnoreCase))
                 {
                     // Auto mapping requested by user: infer from ADF vs platen.
-                    return CurrentSettings?.UseAdf == true ? 270 : 0;
+                    //
+                    // Duplex ADF often produces the back side inverted relative to the front side.
+                    // A common practical mapping (verified by user reports) is:
+                    // - ADF simplex: configurable (default 270°)
+                    // - ADF duplex: configurable odd/even (default odd=270°, even=90°)
+                    // - Platen: configurable (default 0°)
+                    if (CurrentSettings?.UseAdf == true)
+                    {
+                        if (CurrentSettings?.Duplex == true)
+                        {
+                            // pageNumber is 1-based.
+                            var deg = (pageNumber % 2 == 0)
+                                ? _rotationOptions.AutoAdfDuplexEvenDegrees
+                                : _rotationOptions.AutoAdfDuplexOddDegrees;
+                            return NormalizeRotation(deg);
+                        }
+
+                        return NormalizeRotation(_rotationOptions.AutoAdfSimplexDegrees);
+                    }
+
+                    return NormalizeRotation(_rotationOptions.AutoPlatenDegrees);
                 }
 
                 if (int.TryParse(s, out var deg))

@@ -3,7 +3,7 @@
 ; Download Inno Setup from: https://jrsoftware.org/isinfo.php
 
 #define MyAppName "ScanWithWeb Service"
-#define MyAppVersion "3.0.10"
+#define MyAppVersion "3.0.11"
 #define MyAppPublisher "ScanWithWeb Team"
 #define MyAppURL "https://github.com/user/scanwithweb"
 #define MyAppExeName "ScanWithWeb.exe"

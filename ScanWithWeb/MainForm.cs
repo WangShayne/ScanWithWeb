@@ -148,7 +148,7 @@ public partial class MainForm : Form
 
         _versionLabel = new Label
         {
-            Text = $"v3.0.10 ({bits})",
+            Text = $"v3.0.11 ({bits})",
             Font = new Font("Segoe UI", 10F),
             ForeColor = Color.FromArgb(108, 117, 125),
             AutoSize = true,
