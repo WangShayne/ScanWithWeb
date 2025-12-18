@@ -278,10 +278,10 @@ public class TwainScannerProtocol : BaseScannerProtocol
                         if (CurrentSettings?.Duplex == true)
                         {
                             // pageNumber is 1-based.
-                            var deg = (pageNumber % 2 == 0)
+                            var autoDeg = (pageNumber % 2 == 0)
                                 ? _rotationOptions.AutoAdfDuplexEvenDegrees
                                 : _rotationOptions.AutoAdfDuplexOddDegrees;
-                            return NormalizeRotation(deg);
+                            return NormalizeRotation(autoDeg);
                         }
 
                         return NormalizeRotation(_rotationOptions.AutoAdfSimplexDegrees);
@@ -290,13 +290,13 @@ public class TwainScannerProtocol : BaseScannerProtocol
                     return NormalizeRotation(_rotationOptions.AutoPlatenDegrees);
                 }
 
-                if (int.TryParse(s, out var deg))
-                    return NormalizeRotation(deg);
+                if (int.TryParse(s, out var parsedDeg))
+                    return NormalizeRotation(parsedDeg);
             }
             else if (el.ValueKind == JsonValueKind.Number)
             {
-                if (el.TryGetInt32(out var deg))
-                    return NormalizeRotation(deg);
+                if (el.TryGetInt32(out var parsedDeg))
+                    return NormalizeRotation(parsedDeg);
             }
         }
         catch

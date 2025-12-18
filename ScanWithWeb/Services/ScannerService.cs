@@ -553,7 +553,7 @@ public class ScannerService : IDisposable
 
                     if (result == ReturnCode.Success)
                     {
-                        _logger.LogInformation("NoUI mode scan started successfully for session {ClientId}", session.ClientId);
+                        _logger.LogInformation("NoUI mode scan started successfully for session {ClientId}", session?.ClientId ?? "(none)");
                         return Task.FromResult(true);
                     }
                 }
@@ -592,7 +592,7 @@ public class ScannerService : IDisposable
 
             if (result == ReturnCode.Success)
             {
-                _logger.LogInformation("Scan started successfully for session {ClientId}", session.ClientId);
+                _logger.LogInformation("Scan started successfully for session {ClientId}", session?.ClientId ?? "(none)");
                 return Task.FromResult(true);
             }
             else
