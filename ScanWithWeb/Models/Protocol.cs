@@ -114,6 +114,15 @@ public class ScanSettings
     public bool ContinuousScan { get; set; } = false;
 
     /// <summary>
+    /// Rotate scanned images in degrees.
+    /// Supported values: "auto" | 0 | 90 | 180 | 270 (string or number in clients).
+    /// If "auto", rotation is inferred from source (UseAdf=true => 270°, platen => 0°).
+    /// </summary>
+    [JsonPropertyName("rotation")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonElement? Rotation { get; set; }
+
+    /// <summary>
     /// Filter scanners by protocol types (e.g., ["twain", "wia", "escl"])
     /// If null or empty, all protocols are included
     /// </summary>

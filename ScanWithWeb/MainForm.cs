@@ -148,7 +148,7 @@ public partial class MainForm : Form
 
         _versionLabel = new Label
         {
-            Text = $"v3.0.9 ({bits})",
+            Text = $"v3.0.10 ({bits})",
             Font = new Font("Segoe UI", 10F),
             ForeColor = Color.FromArgb(108, 117, 125),
             AutoSize = true,
@@ -879,7 +879,7 @@ public partial class MainForm : Form
         }
     }
 
-    private bool EnsureScannerSelectedForUi()
+    private async Task<bool> EnsureScannerSelectedForUiAsync()
     {
         if (_scannerManager == null) return false;
 
@@ -902,6 +902,25 @@ public partial class MainForm : Form
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to auto-select default scanner for ShowUI");
+        }
+
+        // If there is exactly one scanner available, auto-select it to make ShowUI work out-of-the-box.
+        try
+        {
+            var scanners = await _scannerManager.GetAllScannersAsync();
+            if (scanners.Count == 1)
+            {
+                var only = scanners[0];
+                if (_scannerManager.SelectScanner(only.Id))
+                {
+                    _logger.LogInformation("Auto-selected only available scanner for ShowUI: {Id}", only.Id);
+                    return true;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to auto-select the only available scanner for ShowUI");
         }
 
         var result = MessageBox.Show(
@@ -943,7 +962,7 @@ public partial class MainForm : Form
                 return;
             }
 
-            if (!EnsureScannerSelectedForUi())
+            if (!await EnsureScannerSelectedForUiAsync())
                 return;
 
             // Force vendor driver UI for this one-off "configure" run.

@@ -44,7 +44,7 @@ public class TwainScannerProtocol : BaseScannerProtocol
             // Create TWIdentity manually to avoid issues with single-file publish
             var appId = TWIdentity.Create(
                 DataGroups.Image,
-                new Version(3, 0, 9),
+                new Version(3, 0, 10),
                 "ScanWithWeb Team",
                 "ScanWithWeb",
                 "ScanWithWeb Service",
@@ -115,6 +115,8 @@ public class TwainScannerProtocol : BaseScannerProtocol
 
         try
         {
+            var rotationDegrees = GetRequestedRotationDegrees();
+
             if (e.NativeData != IntPtr.Zero)
             {
                 Logger.LogDebug("[TWAIN] DataTransferred via NativeData (RequestId={RequestId}, Page={Page})",
@@ -125,14 +127,27 @@ public class TwainScannerProtocol : BaseScannerProtocol
                 {
                     using var ms = new MemoryStream();
                     stream.CopyTo(ms);
-                    var rawImageData = ms.ToArray();
 
                     // Get image dimensions before compression
                     ms.Position = 0;
                     using var img = Image.FromStream(ms);
+
+                    if (rotationDegrees != 0)
+                    {
+                        ApplyRotationInPlace(img, rotationDegrees);
+                    }
+
                     var width = img.Width;
                     var height = img.Height;
                     var dpi = (int)img.HorizontalResolution;
+
+                    // Re-encode after rotation (native stream format is driver-dependent; use BMP as stable intermediate)
+                    byte[] rawImageData;
+                    using (var rotated = new MemoryStream())
+                    {
+                        img.Save(rotated, ImageFormat.Bmp);
+                        rawImageData = rotated.ToArray();
+                    }
 
                     // Compress large images to JPEG to avoid WebSocket message size issues
                     var format = "bmp";
@@ -162,14 +177,46 @@ public class TwainScannerProtocol : BaseScannerProtocol
                     e.FileDataPath,
                     _currentRequestId ?? "(none)",
                     _currentPageNumber);
-                var rawImageData = File.ReadAllBytes(e.FileDataPath);
                 using var img = Image.FromFile(e.FileDataPath);
+
+                if (rotationDegrees != 0)
+                {
+                    ApplyRotationInPlace(img, rotationDegrees);
+                }
+
                 var width = img.Width;
                 var height = img.Height;
                 var dpi = (int)img.HorizontalResolution;
 
+                // Re-encode after rotation (use original extension when possible; fall back to BMP)
+                var format = Path.GetExtension(e.FileDataPath).TrimStart('.').ToLowerInvariant();
+                byte[] rawImageData;
+                using (var rotated = new MemoryStream())
+                {
+                    var imageFormat = format switch
+                    {
+                        "png" => ImageFormat.Png,
+                        "jpg" or "jpeg" => ImageFormat.Jpeg,
+                        "tif" or "tiff" => ImageFormat.Tiff,
+                        "bmp" => ImageFormat.Bmp,
+                        _ => ImageFormat.Bmp
+                    };
+
+                    try
+                    {
+                        img.Save(rotated, imageFormat);
+                    }
+                    catch
+                    {
+                        rotated.SetLength(0);
+                        img.Save(rotated, ImageFormat.Bmp);
+                        format = "bmp";
+                    }
+
+                    rawImageData = rotated.ToArray();
+                }
+
                 // Compress large images to JPEG
-                var format = Path.GetExtension(e.FileDataPath).TrimStart('.');
                 var imageData = ImageCompressor.CompressIfNeeded(rawImageData, ref format, Logger);
 
                 var metadata = new ImageMetadata
@@ -197,6 +244,72 @@ public class TwainScannerProtocol : BaseScannerProtocol
             {
                 RaiseScanError(_currentRequestId, ex.Message);
             }
+        }
+    }
+
+    private int GetRequestedRotationDegrees()
+    {
+        var rot = CurrentSettings?.Rotation;
+        if (rot == null || !rot.HasValue)
+            return 0;
+
+        try
+        {
+            var el = rot.Value;
+            if (el.ValueKind == JsonValueKind.String)
+            {
+                var s = el.GetString()?.Trim();
+                if (string.IsNullOrWhiteSpace(s))
+                    return 0;
+
+                if (string.Equals(s, "auto", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Auto mapping requested by user: infer from ADF vs platen.
+                    return CurrentSettings?.UseAdf == true ? 270 : 0;
+                }
+
+                if (int.TryParse(s, out var deg))
+                    return NormalizeRotation(deg);
+            }
+            else if (el.ValueKind == JsonValueKind.Number)
+            {
+                if (el.TryGetInt32(out var deg))
+                    return NormalizeRotation(deg);
+            }
+        }
+        catch
+        {
+            // ignore
+        }
+
+        return 0;
+    }
+
+    private static int NormalizeRotation(int degrees)
+    {
+        // Only support quarter turns.
+        degrees %= 360;
+        if (degrees < 0) degrees += 360;
+        return degrees switch
+        {
+            0 or 90 or 180 or 270 => degrees,
+            _ => 0
+        };
+    }
+
+    private static void ApplyRotationInPlace(Image img, int degrees)
+    {
+        var flip = degrees switch
+        {
+            90 => RotateFlipType.Rotate90FlipNone,
+            180 => RotateFlipType.Rotate180FlipNone,
+            270 => RotateFlipType.Rotate270FlipNone,
+            _ => RotateFlipType.RotateNoneFlipNone
+        };
+
+        if (flip != RotateFlipType.RotateNoneFlipNone)
+        {
+            img.RotateFlip(flip);
         }
     }
 
@@ -403,10 +516,34 @@ public class TwainScannerProtocol : BaseScannerProtocol
     {
         base.ApplySettings(settings);
 
-        if (_twain?.CurrentSource == null)
+        if (_twain == null)
         {
-            Logger.LogWarning("[TWAIN] ApplySettings called but no current source is selected");
+            Logger.LogWarning("[TWAIN] ApplySettings called but TWAIN session is not initialized");
             return;
+        }
+
+        // Some drivers (or previous error recovery) can leave CurrentSource null even though we have a selected scanner id.
+        // Best-effort: re-open the selected source so subsequent scans don't require a full service restart.
+        if (_twain.CurrentSource == null)
+        {
+            if (_twain.State == 3 && !string.IsNullOrWhiteSpace(CurrentScannerId))
+            {
+                Logger.LogWarning("[TWAIN] CurrentSource is null; attempting to re-select scanner before applying settings (ScannerId={Id})", CurrentScannerId);
+                try
+                {
+                    SelectScanner(CurrentScannerId);
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning(ex, "[TWAIN] Failed to re-select scanner in ApplySettings");
+                }
+            }
+
+            if (_twain.CurrentSource == null)
+            {
+                Logger.LogWarning("[TWAIN] ApplySettings called but no current source is selected");
+                return;
+            }
         }
 
         var src = _twain.CurrentSource;
@@ -661,12 +798,15 @@ public class TwainScannerProtocol : BaseScannerProtocol
                     }
 
                     Logger.LogWarning("[TWAIN] NoUI mode returned {Result}. To allow scanner UI, set settings.showUI=true.", result);
+                    // Ensure the driver/source is in a good state for the next attempt.
+                    TryDisableAndStepDown($"StartScan:NoUI:{result}");
                     IsScanning = false;
                     return false;
                 }
                 catch (Exception noUiEx)
                 {
                     Logger.LogWarning(noUiEx, "[TWAIN] NoUI mode threw an exception. To allow scanner UI, set settings.showUI=true.");
+                    TryDisableAndStepDown("StartScan:NoUI:Exception");
                     IsScanning = false;
                     return false;
                 }
@@ -719,6 +859,7 @@ public class TwainScannerProtocol : BaseScannerProtocol
             }
 
             Logger.LogWarning("[TWAIN] Failed to start scan: {Result}", result);
+            TryDisableAndStepDown($"StartScan:ShowUI:{result}");
             IsScanning = false;
             return false;
         }

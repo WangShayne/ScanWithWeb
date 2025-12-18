@@ -566,6 +566,7 @@ public class ScannerManager : IDisposable
             UseAdf = settings.UseAdf,
             MaxPages = settings.MaxPages,
             ContinuousScan = settings.ContinuousScan,
+            Rotation = settings.Rotation,
             Protocols = settings.Protocols == null ? null : settings.Protocols.ToList()
         };
     }

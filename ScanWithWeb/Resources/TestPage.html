@@ -444,6 +444,16 @@
                         <option value="Legal">Legal</option>
                     </select>
                 </div>
+                <div class="control-group">
+                    <label>旋转</label>
+                    <select id="rotationSelect">
+                        <option value="auto" selected>自动（ADF→270°，平板→0°）</option>
+                        <option value="0">0°</option>
+                        <option value="90">90°</option>
+                        <option value="180">180°</option>
+                        <option value="270">270°</option>
+                    </select>
+                </div>
             </div>
 
             <!-- Common Settings -->
@@ -683,10 +693,11 @@
                 paperSize: document.getElementById('paperSelect').value,
                 useAdf: document.getElementById('useAdf').checked,
                 duplex: document.getElementById('duplex').checked,
+                rotation: document.getElementById('rotationSelect').value,
                 maxPages: parseInt(document.getElementById('maxPages').value)
             };
 
-            log(`开始扫描：DPI=${settings.dpi}，颜色=${settings.pixelType}，纸张=${settings.paperSize}，ADF=${settings.useAdf}，双面=${settings.duplex}，最大页数=${settings.maxPages}`);
+            log(`开始扫描：DPI=${settings.dpi}，颜色=${settings.pixelType}，纸张=${settings.paperSize}，ADF=${settings.useAdf}，双面=${settings.duplex}，旋转=${settings.rotation}，最大页数=${settings.maxPages}`);
             currentPage = 0;
 
             scanning = true;
